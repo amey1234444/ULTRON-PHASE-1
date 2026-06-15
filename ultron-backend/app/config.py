@@ -31,10 +31,10 @@ class SensorConfig:
         default_factory=lambda: int(os.getenv("PRESSURE_ADS1115_ADDRESS", "0x48"), 0)
     )
     # Simulation bounds
-    pressure_min: float = field(default_factory=lambda: float(os.getenv("PRESSURE_MIN", "4.0")))
-    pressure_max: float = field(default_factory=lambda: float(os.getenv("PRESSURE_MAX", "11.0")))
-    temperature_min: float = field(default_factory=lambda: float(os.getenv("TEMPERATURE_MIN", "50.0")))
-    temperature_max: float = field(default_factory=lambda: float(os.getenv("TEMPERATURE_MAX", "115.0")))
+    pressure_min: float = field(default_factory=lambda: float(os.getenv("PRESSURE_MIN", "1.0")))
+    pressure_max: float = field(default_factory=lambda: float(os.getenv("PRESSURE_MAX", "15.0")))
+    temperature_min: float = field(default_factory=lambda: float(os.getenv("TEMPERATURE_MIN", "20.0")))
+    temperature_max: float = field(default_factory=lambda: float(os.getenv("TEMPERATURE_MAX", "120.0")))
 
 
 @dataclass(frozen=True)

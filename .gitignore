@@ -6,11 +6,9 @@ node_modules/
 venv/
 __pycache__/
 *.pyc
-.pytest_cache/
 
 # Environment files
 .env
-.env.local
 
 # Build files
 dist/
@@ -22,14 +20,3 @@ build/
 
 # Logs
 *.log
-logs/
-
-# Rust / Tauri build artifacts
-ultron-desktop/src-tauri/target/
-
-# Vite temp files
-*.timestamp-*
-
-# OS files
-.DS_Store
-Thumbs.db

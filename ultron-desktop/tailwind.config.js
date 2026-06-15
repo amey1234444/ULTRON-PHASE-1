@@ -31,15 +31,12 @@ export default {
         mono: ['"JetBrains Mono"', '"Roboto Mono"', 'monospace'],
       },
       fontSize: {
-        '2xs':  ['0.7rem',   { lineHeight: '1.1rem' }],
-        '3xs':  ['0.575rem', { lineHeight: '0.875rem' }],
+        '2xs': ['0.7rem',   { lineHeight: '1.1rem' }],
+        '3xs': ['0.575rem', { lineHeight: '0.875rem' }],
       },
       boxShadow: {
-        panel:      '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
+        panel:    '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
         'panel-lg': '0 4px 16px rgba(0,0,0,0.24)',
-        'glow-ok':  '0 0 24px rgba(0,214,143,0.18)',
-        'glow-warn':'0 0 24px rgba(255,184,48,0.18)',
-        'glow-crit':'0 0 24px rgba(255,45,85,0.22)',
       },
       animation: {
         'status-pulse': 'statusPulse 2s ease-in-out infinite',

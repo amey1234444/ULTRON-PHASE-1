@@ -56,50 +56,25 @@ export const PlaceholderPage: React.FC<Props> = ({ view }) => {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '2rem' }}>
-      <div className="scada-panel animate-fade-in" style={{ maxWidth: 520, width: '100%', padding: 0, overflow: 'hidden' }}>
-        {/* Gradient accent */}
-        <div style={{ height: 2, background: 'linear-gradient(90deg, var(--accent), var(--info), transparent)' }} />
-
-        <div style={{ padding: '1.75rem 2rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1.25rem' }}>
-            <span style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',
-              padding: '3px 10px', borderRadius: 4, background: 'var(--accent-dim)', color: 'var(--accent)',
-            }}>
-              {content.phase}
-            </span>
-            <span style={{ fontSize: 10, color: 'var(--text-3)', letterSpacing: '0.04em' }}>ETA {content.eta}</span>
-          </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)', marginBottom: '0.6rem', letterSpacing: '0.02em' }}>
-            {content.title}
-          </h2>
-          <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.7, marginBottom: '1.5rem' }}>
-            {content.description}
-          </p>
-
-          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.25rem' }}>
-            <p style={{
-              fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
-              color: 'var(--text-3)', marginBottom: '0.85rem',
-            }}>
-              Planned features
-            </p>
-            <ul style={{ display: 'flex', flexDirection: 'column', gap: 10, margin: 0, padding: 0, listStyle: 'none' }}>
-              {content.features.map((f, i) => (
-                <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5 }}>
-                  <span style={{
-                    width: 18, height: 18, borderRadius: 4, background: 'var(--accent-dim)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
-                  }}>
-                    <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="var(--accent)" strokeWidth="2">
-                      <path d="M3 8h10M8 3v10" strokeLinecap="round" />
-                    </svg>
-                  </span>
-                  {f}
-                </li>
-              ))}
-            </ul>
-          </div>
+      <div style={{ maxWidth: 500, width: '100%', padding: '1.75rem 2rem', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: '1.25rem' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '2px 8px', borderRadius: 2, background: 'var(--accent-dim)', color: 'var(--accent)' }}>
+            {content.phase}
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>· ETA {content.eta}</span>
+        </div>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: '0.5rem' }}>{content.title}</h2>
+        <p style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6, marginBottom: '1.5rem' }}>{content.description}</p>
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem' }}>
+          <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: '0.75rem' }}>Planned features</p>
+          <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: 0, padding: 0, listStyle: 'none' }}>
+            {content.features.map((f, i) => (
+              <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-2)' }}>
+                <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--border-hi)', flexShrink: 0 }} />
+                {f}
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
     </div>

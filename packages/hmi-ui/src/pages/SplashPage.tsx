@@ -125,25 +125,24 @@ export const SplashPage: React.FC = () => {
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-10"
       style={{ background: 'var(--surface)' }}>
 
-      <div className="w-full max-w-sm scada-panel p-0 overflow-hidden animate-fade-in"
-        style={{ boxShadow: '0 8px 48px rgba(0,0,0,0.5), 0 0 80px rgba(56,160,255,0.04)' }}>
-        {/* Header accent bar */}
-        <div style={{ height: 2, background: 'linear-gradient(90deg, transparent 0%, var(--accent) 50%, transparent 100%)' }} />
+      <div className="w-full max-w-sm scada-panel p-0 overflow-hidden animate-fade-in">
+        {/* Header accent */}
+        <div className="h-0.5" style={{ background: 'var(--accent)' }} />
 
         <div className="p-8">
           {/* Logo */}
           <div className="flex flex-col items-center mb-8">
-            <div className="w-16 h-16 rounded-lg flex items-center justify-center mb-4"
-              style={{ background: 'var(--accent-dim)', border: '1px solid var(--border-hi)', boxShadow: '0 0 24px rgba(56,160,255,0.12)' }}>
-              <svg viewBox="0 0 24 24" className="w-8 h-8" fill="none"
+            <div className="w-14 h-14 rounded flex items-center justify-center mb-4"
+              style={{ background: 'var(--accent-dim)', border: '1px solid var(--border-hi)' }}>
+              <svg viewBox="0 0 24 24" className="w-7 h-7" fill="none"
                 stroke="var(--accent)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
               </svg>
             </div>
-            <h1 className="text-xl font-black tracking-[0.3em] uppercase" style={{ color: 'var(--text)' }}>
+            <h1 className="text-lg font-black tracking-[0.25em] uppercase" style={{ color: 'var(--text)' }}>
               ULTRON
             </h1>
-            <p className="text-2xs tracking-widest uppercase mt-1" style={{ color: 'var(--text-3)' }}>
+            <p className="text-2xs tracking-widest uppercase mt-0.5" style={{ color: 'var(--text-3)' }}>
               Industrial Control System
             </p>
           </div>
@@ -186,10 +185,16 @@ export const SplashPage: React.FC = () => {
                   Backend: {backendError}
                 </div>
               )}
-              <button onClick={goDiscovery} className="btn-primary w-full">
+              <button onClick={goDiscovery} className="w-full rounded px-4 py-2.5 text-sm font-semibold transition-colors"
+                style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(59,130,246,0.25)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--accent-dim)'; }}>
                 Search Again / Enter IP
               </button>
-              <button onClick={goSimulation} className="btn-secondary w-full">
+              <button onClick={goSimulation} className="w-full rounded px-4 py-2.5 text-sm font-medium transition-colors"
+                style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)', color: 'var(--text-2)' }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-hi)'; (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}>
                 Continue in Simulation Mode
               </button>
             </div>

@@ -12,10 +12,8 @@ import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
-import orjson
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
@@ -205,13 +203,6 @@ async def lifespan(app: FastAPI):
 # FastAPI application
 # ---------------------------------------------------------------------------
 
-class ORJSONResponse(JSONResponse):
-    media_type = "application/json"
-
-    def render(self, content: object) -> bytes:
-        return orjson.dumps(content)
-
-
 app = FastAPI(
     title=f"{settings.app_name} Industrial Monitoring API",
     description=(
@@ -221,13 +212,11 @@ app = FastAPI(
     ),
     version=settings.version,
     lifespan=lifespan,
-    default_response_class=ORJSONResponse,
 )
 
-app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # Tighten to specific origins in production
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -415,13 +404,13 @@ async def sensor_history(
     tags=["Modbus"],
     summary="Modbus server runtime status",
 )
-async def modbus_status() -> ORJSONResponse:
+async def modbus_status() -> JSONResponse:
     """
     Returns the current runtime status of the Modbus subsystem:
     which servers are enabled, which are running, the active slave ID,
     total register update count, and the timestamp of the last update.
     """
-    return ORJSONResponse(content=modbus_service.status())
+    return JSONResponse(content=modbus_service.status())
 
 
 @app.get(
@@ -429,7 +418,7 @@ async def modbus_status() -> ORJSONResponse:
     tags=["Modbus"],
     summary="Full Modbus Input Register map documentation",
 )
-async def modbus_register_map() -> ORJSONResponse:
+async def modbus_register_map() -> JSONResponse:
     """
     Returns the complete Input Register map (FC4, 3xxxx addresses) with:
     - PDU addresses, display addresses, data types, units, and descriptions
@@ -437,7 +426,7 @@ async def modbus_register_map() -> ORJSONResponse:
     - Compatibility integer registers
     - Reserved Holding Register (4xxxx) plan for future configuration writes
     """
-    return ORJSONResponse(content=build_register_documentation())
+    return JSONResponse(content=build_register_documentation())
 
 
 # ---------------------------------------------------------------------------
