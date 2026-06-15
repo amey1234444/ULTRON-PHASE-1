@@ -143,16 +143,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, active, onNavigate,
         'flex items-center h-12 border-b flex-shrink-0',
         collapsed ? 'justify-center px-0' : 'px-3 gap-2.5',
       )} style={{ borderColor: 'var(--border)' }}>
-        <div className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded"
-          style={{ background: 'var(--accent-dim)' }}>
+        <div className="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded-md"
+          style={{ background: 'var(--accent-dim)', boxShadow: '0 0 12px rgba(56,160,255,0.1)' }}>
           <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="var(--accent)" strokeWidth={2}>
             <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
           </svg>
         </div>
         {!collapsed && (
           <div>
-            <div className="text-xs font-black tracking-widest" style={{ color: 'var(--text)' }}>ULTRON</div>
-            <div className="text-2xs" style={{ color: 'var(--text-3)' }}>CONTROL SYSTEM</div>
+            <div className="text-xs font-black tracking-[0.15em]" style={{ color: 'var(--text)' }}>ULTRON</div>
+            <div className="text-3xs" style={{ color: 'var(--text-3)', letterSpacing: '0.06em' }}>CONTROL SYSTEM</div>
           </div>
         )}
       </div>

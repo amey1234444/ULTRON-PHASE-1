@@ -10,9 +10,9 @@ Design notes:
 """
 
 import asyncio
-import json
 from typing import Set
 
+import orjson
 from fastapi import WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
@@ -54,7 +54,7 @@ class WebSocketManager:
         if not self._connections:
             return
 
-        payload = reading.model_dump_json()
+        payload = orjson.dumps(reading.model_dump(mode="python")).decode()
 
         async with self._lock:
             snapshot = set(self._connections)

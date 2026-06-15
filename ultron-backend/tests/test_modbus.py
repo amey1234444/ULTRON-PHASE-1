@@ -286,8 +286,8 @@ class TestRegisterMapConstants:
         assert REG_COMPAT_PRESSURE_INT < TOTAL_INPUT_REGISTERS
         assert REG_COMPAT_TEMP_INT     < TOTAL_INPUT_REGISTERS
 
-    def test_total_registers_is_110(self):
-        assert TOTAL_INPUT_REGISTERS == 110
+    def test_total_registers_is_220(self):
+        assert TOTAL_INPUT_REGISTERS == 220
 
     def test_no_address_collisions(self):
         """All register addresses must be unique."""

@@ -18,6 +18,28 @@ function buildCsv(rows: SensorReading[]): string {
   return [header, ...lines].join('\n');
 }
 
+function computeStats(readings: SensorReading[]) {
+  if (!readings.length) return null;
+  let pMin = Infinity, pMax = -Infinity, pSum = 0;
+  let tMin = Infinity, tMax = -Infinity, tSum = 0, tCount = 0;
+  for (const r of readings) {
+    pMin = Math.min(pMin, r.pressure);
+    pMax = Math.max(pMax, r.pressure);
+    pSum += r.pressure;
+    if (r.temperature != null) {
+      tMin = Math.min(tMin, r.temperature);
+      tMax = Math.max(tMax, r.temperature);
+      tSum += r.temperature;
+      tCount++;
+    }
+  }
+  const latest = readings[readings.length - 1];
+  return {
+    pressure:    { min: pMin, max: pMax, avg: pSum / readings.length, latest: latest?.pressure ?? 0 },
+    temperature: { min: tCount ? tMin : 0, max: tCount ? tMax : 0, avg: tCount ? tSum / tCount : 0, latest: latest?.temperature ?? 0 },
+  };
+}
+
 // ── Presets ───────────────────────────────────────────────────────────────────
 
 const PRESETS = [
@@ -28,30 +50,36 @@ const PRESETS = [
 ] as const;
 
 type PresetMinutes = (typeof PRESETS)[number]['minutes'];
+type ViewMode = 'combined' | 'split';
 
-// ── SimBanner ─────────────────────────────────────────────────────────────────
+// ── Stat Card ─────────────────────────────────────────────────────────────────
 
-function SimBanner() {
+interface StatProps {
+  label: string;
+  value: string;
+  unit: string;
+  color: string;
+  sub?: string;
+}
+
+function StatCard({ label, value, unit, color, sub }: StatProps) {
   return (
     <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 8,
-        padding: '6px 16px',
-        background: 'var(--warn-dim)',
-        borderBottom: '1px solid var(--warn)',
-        color: 'var(--warn)',
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        flexShrink: 0,
-      }}
+      className="scada-panel"
+      style={{ padding: '12px 16px', minWidth: 0, flex: 1 }}
     >
-      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--warn)' }} />
-      Simulation Mode — No hardware connected
+      <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+        <span className="eng-value" style={{ fontSize: 22, fontWeight: 700, color }}>{value}</span>
+        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{unit}</span>
+      </div>
+      {sub && (
+        <div style={{ fontSize: 10, color: 'var(--text-3)', marginTop: 4, fontFamily: '"JetBrains Mono", monospace' }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
@@ -71,10 +99,8 @@ export const HistoricalTrendsPage: React.FC = () => {
   const [dbCount,    setDbCount]    = useState<number | null>(null);
   const [totalStored, setTotalStored] = useState<number | null>(null);
   const [error,      setError]      = useState<string | null>(null);
+  const [viewMode,   setViewMode]   = useState<ViewMode>('combined');
 
-  // Merge DB readings with live store readings.
-  // DB is newest-first reversed → chronological. Live readings are also chronological.
-  // We append live readings that fall after the last DB timestamp to fill the flush gap.
   const allReadings = useMemo<SensorReading[]>(() => {
     if (!dbReadings.length) return storeReadings;
     const cutoff    = dbReadings[dbReadings.length - 1]?.timestamp ?? '';
@@ -84,6 +110,7 @@ export const HistoricalTrendsPage: React.FC = () => {
   }, [dbReadings, storeReadings]);
 
   const isHistorical = dbReadings.length > 0;
+  const stats = useMemo(() => computeStats(allReadings), [allReadings]);
 
   // ── Load from DB ────────────────────────────────────────────────────────────
 
@@ -102,7 +129,6 @@ export const HistoricalTrendsPage: React.FC = () => {
           total_stored: number;
           readings: SensorReading[];
         } = await res.json();
-        // API returns newest-first — reverse for chronological chart order
         setDbReadings([...data.readings].reverse());
         setDbCount(data.count);
         setTotalStored(data.total_stored);
@@ -115,7 +141,6 @@ export const HistoricalTrendsPage: React.FC = () => {
     [apiBase],
   );
 
-  // Auto-load last hour on mount
   useEffect(() => {
     loadHistory(preset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -140,91 +165,125 @@ export const HistoricalTrendsPage: React.FC = () => {
     }
   }, [allReadings, push]);
 
-  // ── Styles ──────────────────────────────────────────────────────────────────
-
-  const presetBtn = (active: boolean): React.CSSProperties => ({
-    padding: '4px 12px',
-    fontSize: 10,
-    fontWeight: 700,
-    letterSpacing: '0.05em',
-    textTransform: 'uppercase',
-    borderRadius: 2,
-    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-    background: active ? 'var(--accent-dim)' : 'transparent',
-    color: active ? 'var(--accent)' : 'var(--text-3)',
-    cursor: 'pointer',
-    transition: 'all 120ms ease',
-  });
-
-  const actionBtn = (disabled = false): React.CSSProperties => ({
-    padding: '4px 12px',
-    fontSize: 10,
-    fontWeight: 600,
-    borderRadius: 2,
-    border: '1px solid var(--border)',
-    background: 'transparent',
-    color: disabled ? 'var(--text-3)' : 'var(--text-2)',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.5 : 1,
-    transition: 'all 120ms ease',
-  });
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      {isSim && <SimBanner />}
+    <div className="flex flex-col h-full overflow-hidden">
+      {/* Sim banner */}
+      {isSim && (
+        <div className="sim-banner">
+          <span className="status-dot animate-status-pulse" style={{ background: 'var(--warn)' }} />
+          Simulation Mode — No hardware connected
+        </div>
+      )}
 
-      {/* ── Controls bar ───────────────────────────────────────────────────── */}
+      {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div
+        className="flex-shrink-0"
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
-          padding: '8px 14px',
+          gap: 8,
+          padding: '10px 16px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--panel)',
-          flexShrink: 0,
-          flexWrap: 'wrap',
         }}
       >
-        {/* Preset time-range buttons */}
-        {PRESETS.map((p) => (
-          <button
-            key={p.label}
-            onClick={() => {
-              setPreset(p.minutes);
-              loadHistory(p.minutes);
-            }}
-            style={presetBtn(preset === p.minutes)}
-          >
-            {p.label}
-          </button>
-        ))}
+        {/* Time range button group */}
+        <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          {PRESETS.map((p) => {
+            const active = preset === p.minutes;
+            return (
+              <button
+                key={p.label}
+                onClick={() => { setPreset(p.minutes); loadHistory(p.minutes); }}
+                style={{
+                  padding: '6px 14px',
+                  fontSize: 11,
+                  fontWeight: active ? 700 : 500,
+                  letterSpacing: '0.03em',
+                  textTransform: 'uppercase',
+                  border: 'none',
+                  borderRight: '1px solid var(--border)',
+                  background: active ? 'var(--accent-dim)' : 'transparent',
+                  color: active ? 'var(--accent)' : 'var(--text-3)',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease',
+                }}
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
 
-        <div style={{ width: 1, height: 14, background: 'var(--border-hi)', flexShrink: 0 }} />
+        {/* View toggle */}
+        <div style={{ display: 'flex', borderRadius: 6, overflow: 'hidden', border: '1px solid var(--border)' }}>
+          {(['combined', 'split'] as const).map((mode) => {
+            const active = viewMode === mode;
+            return (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                title={mode === 'combined' ? 'Combined overlay chart' : 'Split individual charts'}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: 11,
+                  fontWeight: active ? 700 : 500,
+                  border: 'none',
+                  borderRight: '1px solid var(--border)',
+                  background: active ? 'var(--accent-dim)' : 'transparent',
+                  color: active ? 'var(--accent)' : 'var(--text-3)',
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                {mode === 'combined' ? (
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="1" y="1" width="14" height="14" rx="2" />
+                    <path d="M1 8h14" />
+                  </svg>
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <rect x="1" y="1" width="14" height="6" rx="2" />
+                    <rect x="1" y="9" width="14" height="6" rx="2" />
+                  </svg>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-        {/* Refresh */}
+        {/* Actions */}
         <button
           onClick={() => loadHistory(preset)}
           disabled={loading}
-          style={actionBtn(loading)}
-          title="Re-fetch from database"
+          className="btn-secondary"
+          style={{ padding: '6px 14px', fontSize: 11, borderRadius: 6, opacity: loading ? 0.5 : 1 }}
         >
-          {loading ? 'Loading…' : '↺ Refresh'}
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 8A6 6 0 1 1 8 2" strokeLinecap="round" />
+            <path d="M14 2v6h-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          {loading ? 'Loading…' : 'Refresh'}
         </button>
 
-        {/* Export */}
         {allReadings.length > 0 && (
-          <button onClick={exportCsv} style={actionBtn()}>
+          <button onClick={exportCsv} className="btn-secondary" style={{ padding: '6px 14px', fontSize: 11, borderRadius: 6 }}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M8 2v8M5 7l3 3 3-3M3 12h10" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             Export CSV
           </button>
         )}
 
-        {/* Status — pushed to the right */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        {/* Status — pushed right */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {error && (
-            <span style={{ fontSize: 10, color: 'var(--crit)' }}>
+            <span style={{ fontSize: 10, color: 'var(--crit)', fontWeight: 600 }}>
               {error}
             </span>
           )}
@@ -241,34 +300,79 @@ export const HistoricalTrendsPage: React.FC = () => {
               ? 'Loading…'
               : 'No DB data'}
             {' · '}
-            {allReadings.length.toLocaleString()} pts displayed
-            {totalStored !== null && (
-              <>
-                {' · '}
-                {totalStored.toLocaleString()} total stored
-              </>
-            )}
+            {allReadings.length.toLocaleString()} pts
+            {totalStored !== null && ` · ${totalStored.toLocaleString()} stored`}
           </span>
         </div>
       </div>
 
-      {/* ── Charts ─────────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          flex: 1,
-          overflow: 'auto',
-          padding: 14,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 12,
-        }}
-      >
-        <div style={{ height: 320 }}>
-          <MultiTrendChart readings={allReadings} historical={isHistorical} />
+      {/* ── Stats Row ───────────────────────────────────────────────────────── */}
+      {stats && (
+        <div
+          className="flex-shrink-0 animate-fade-in"
+          style={{ display: 'flex', gap: 10, padding: '10px 16px', background: 'var(--surface)' }}
+        >
+          <StatCard
+            label="Pressure (latest)"
+            value={stats.pressure.latest.toFixed(2)}
+            unit="bar"
+            color="var(--info)"
+            sub={`Min ${stats.pressure.min.toFixed(1)} · Avg ${stats.pressure.avg.toFixed(1)} · Max ${stats.pressure.max.toFixed(1)}`}
+          />
+          <StatCard
+            label="Temperature (latest)"
+            value={stats.temperature.latest.toFixed(1)}
+            unit="°C"
+            color="var(--warn)"
+            sub={`Min ${stats.temperature.min.toFixed(0)} · Avg ${stats.temperature.avg.toFixed(0)} · Max ${stats.temperature.max.toFixed(0)}`}
+          />
+          <StatCard
+            label="Data Points"
+            value={allReadings.length.toLocaleString()}
+            unit="pts"
+            color="var(--text)"
+            sub={totalStored !== null ? `${totalStored.toLocaleString()} total in database` : 'Live data only'}
+          />
+          <StatCard
+            label="Time Range"
+            value={PRESETS.find((p) => p.minutes === preset)?.label ?? '—'}
+            unit=""
+            color="var(--accent)"
+            sub={isHistorical ? 'Historical + Live tail' : 'Live stream only'}
+          />
         </div>
-        <TrendChart type="pressure"    readings={allReadings} />
-        <TrendChart type="temperature" readings={allReadings} />
+      )}
+
+      {/* ── Charts Area ─────────────────────────────────────────────────────── */}
+      <div
+        className="flex-1 overflow-auto"
+        style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
+      >
+        {viewMode === 'combined' ? (
+          <div style={{ flex: 1, minHeight: 400 }}>
+            <MultiTrendChart readings={allReadings} historical={isHistorical} />
+          </div>
+        ) : (
+          <>
+            <div style={{ flex: 1, minHeight: 280 }}>
+              <TrendChart type="pressure" readings={allReadings} />
+            </div>
+            <div style={{ flex: 1, minHeight: 280 }}>
+              <TrendChart type="temperature" readings={allReadings} />
+            </div>
+          </>
+        )}
       </div>
+
+      {/* ── Footer ──────────────────────────────────────────────────────────── */}
+      <footer className="app-footer">
+        <span>ULTRON INDUSTRIAL CONTROL · HISTORICAL TRENDS</span>
+        <span>
+          {isHistorical ? 'DB + Live' : 'Live'} · {allReadings.length.toLocaleString()} pts · {
+            PRESETS.find((p) => p.minutes === preset)?.label ?? '—'
+          } window
+        </span>
+      </footer>
     </div>
   );
 };
