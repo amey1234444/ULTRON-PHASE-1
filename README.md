@@ -94,24 +94,109 @@ ULTRON-PHASE-1/
 
 ## Deployment
 
-### Docker Compose (Web)
+### Option A — Docker Compose (Self-Hosted)
 
-The `docker-compose.yml` starts:
-- **backend**: FastAPI + uvicorn with orjson, GZip compression, uvloop
-- **dashboard**: Nginx serving the built SPA, proxying API + WebSocket
+The `docker-compose.yml` starts both backend and dashboard:
 
 ```bash
 docker compose up --build -d
 ```
 
-### Desktop App (Windows/macOS/Linux)
+- **backend**: FastAPI + uvicorn with orjson, GZip compression, uvloop
+- **dashboard**: Nginx serving the built SPA, proxying API + WebSocket to backend
+
+### Option B — Deploy Dashboard on Existing Website (Static Hosting)
+
+The dashboard builds to a static SPA (`ultron-dashboard/dist/`) that can be
+served from any web server (Nginx, Apache, S3, Netlify, Vercel, etc.).
+
+**Step 1: Build the dashboard**
+```bash
+npm install                  # from project root
+cd ultron-dashboard && npm run build
+```
+
+**Step 2: Copy `dist/` contents to your website**
+Upload the files in `ultron-dashboard/dist/` to your web server's document root
+(or a subdirectory).
+
+**Step 3: Configure API proxy on your existing web server**
+
+The dashboard connects to the backend via `/ws`, `/api/*`, `/health`, `/device`,
+and `/sensors/*` paths. Your existing web server must reverse-proxy these paths
+to the ULTRON backend.
+
+**Nginx example** (add to your existing server block):
+```nginx
+# ULTRON API proxy
+location /api/ {
+    proxy_pass http://BACKEND_HOST:8000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+location /health { proxy_pass http://BACKEND_HOST:8000; }
+location /device { proxy_pass http://BACKEND_HOST:8000; }
+location /sensors/ { proxy_pass http://BACKEND_HOST:8000; }
+
+# WebSocket proxy
+location /ws {
+    proxy_pass http://BACKEND_HOST:8000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_read_timeout 86400s;
+}
+
+# SPA fallback (serve index.html for all other routes)
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+Replace `BACKEND_HOST` with the IP/hostname of the machine running the backend.
+
+**Apache example** (in `.htaccess` or VirtualHost):
+```apache
+RewriteEngine On
+# API proxy
+ProxyPass /api/ http://BACKEND_HOST:8000/api/
+ProxyPassReverse /api/ http://BACKEND_HOST:8000/api/
+ProxyPass /ws ws://BACKEND_HOST:8000/ws
+ProxyPassReverse /ws ws://BACKEND_HOST:8000/ws
+ProxyPass /health http://BACKEND_HOST:8000/health
+ProxyPass /device http://BACKEND_HOST:8000/device
+# SPA fallback
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ /index.html [L]
+```
+
+**Step 4: Run the backend**
+
+On the backend server:
+```bash
+cd ultron-backend
+source .venv/bin/activate
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Or via Docker:
+```bash
+docker compose up backend -d
+```
+
+### Option C — Desktop App (Windows/macOS/Linux)
 
 ```bash
 cd ultron-desktop
 npm run tauri:build
 ```
 
-Produces platform-specific installers in `ultron-desktop/src-tauri/target/release/bundle/`.
+Produces platform-specific installers:
+- **Windows**: NSIS installer (`.exe`) and MSI
+- **macOS**: DMG disk image
+- **Linux**: AppImage and `.deb` package
+
+Output location: `ultron-desktop/src-tauri/target/release/bundle/`
 
 ### Raspberry Pi (Hardware Mode)
 
