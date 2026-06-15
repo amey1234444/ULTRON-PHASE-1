@@ -1,0 +1,63 @@
+# ULTRON Industrial IoT Monitoring System — Docker Compose
+# Usage:
+#   docker compose up --build        # start both services
+#   docker compose up --build -d     # start detached
+#   docker compose down              # stop and remove containers
+#   docker compose logs -f backend   # tail backend logs
+
+services:
+  backend:
+    build:
+      context: ./ultron-backend
+      dockerfile: Dockerfile
+    container_name: ultron-backend
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+      - "${MODBUS_TCP_PORT:-5020}:5020"
+    volumes:
+      - ultron-data:/app/data
+    environment:
+      - SIMULATED=${SIMULATED:-true}
+      - HOST=0.0.0.0
+      - PORT=8000
+      - BROADCAST_INTERVAL_MS=${BROADCAST_INTERVAL_MS:-100}
+      - DB_ENABLED=${DB_ENABLED:-true}
+      - DB_PATH=/app/data/ultron.db
+      - DB_RETENTION_DAYS=${DB_RETENTION_DAYS:-30}
+      - MODBUS_TCP_ENABLED=${MODBUS_TCP_ENABLED:-true}
+      - MODBUS_TCP_PORT=5020
+      - MODBUS_RTU_ENABLED=false
+      - MDNS_ENABLED=false
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PRESSURE_MIN=${PRESSURE_MIN:-4.0}
+      - PRESSURE_MAX=${PRESSURE_MAX:-11.0}
+      - TEMPERATURE_MIN=${TEMPERATURE_MIN:-50.0}
+      - TEMPERATURE_MAX=${TEMPERATURE_MAX:-115.0}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      start_period: 5s
+      retries: 3
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: ultron-dashboard/Dockerfile
+    container_name: ultron-dashboard
+    restart: unless-stopped
+    ports:
+      - "${DASHBOARD_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  ultron-data:
+    driver: local

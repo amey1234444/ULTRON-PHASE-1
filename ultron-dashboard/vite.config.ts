@@ -18,4 +18,15 @@ export default defineConfig({
     port: 3000,
     host: true,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          charts: ['echarts'],
+          state: ['zustand', '@tanstack/react-query'],
+        },
+      },
+    },
+  },
 });
