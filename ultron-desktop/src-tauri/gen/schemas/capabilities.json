@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for the ULTRON desktop application","local":true,"windows":["main"],"permissions":["core:default","core:event:default","core:window:default","shell:allow-open","fs:allow-app-read-recursive","fs:allow-app-write-recursive","fs:allow-app-meta-recursive"]}}

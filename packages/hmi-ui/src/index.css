@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── CSS Custom Properties — Dark Theme (default) ─────────────────────────── */
+:root {
+  /* Navy-steel industrial palette */
+  --surface:     #060C18;
+  --panel:       #0C1A28;
+  --panel-alt:   #122233;
+  --border:      #1A3048;
+  --border-hi:   #2A4A6A;
+  --text:        #CDE4F8;
+  --text-2:      #6AAED0;
+  --text-3:      #3A5E7A;
+  --accent:      #38A0FF;
+  --accent-dim:  rgba(56,160,255,0.16);
+  --ok:          #20D068;
+  --warn:        #FFB020;
+  --crit:        #FF4040;
+  --info:        #38A0FF;
+  --ok-dim:      rgba(32,208,104,0.15);
+  --warn-dim:    rgba(255,176,32,0.15);
+  --crit-dim:    rgba(255,64,64,0.15);
+  --sidebar:     #040810;
+  --topbar:      #0C1A28;
+  color-scheme: dark;
+}
+
+/* ── Light Theme ───────────────────────────────────────────────────────────── */
+.light {
+  --surface:     #F0F4F8;
+  --panel:       #FFFFFF;
+  --panel-alt:   #EDF1F7;
+  --border:      #D8E2EE;
+  --border-hi:   #B8CCDF;
+  --text:        #0F1E30;
+  --text-2:      #4A6880;
+  --text-3:      #7A99B2;
+  --accent:      #1E80F0;
+  --accent-dim:  rgba(30,128,240,0.12);
+  --ok:          #14A854;
+  --warn:        #D08000;
+  --crit:        #D42020;
+  --info:        #1E80F0;
+  --ok-dim:      rgba(20,168,84,0.12);
+  --warn-dim:    rgba(208,128,0,0.12);
+  --crit-dim:    rgba(212,32,32,0.12);
+  --sidebar:     #1A2A3E;
+  --topbar:      #FFFFFF;
+  color-scheme: light;
+}
+
+/* ── Reset & Base ──────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  user-select: none;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: var(--surface);
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  overflow-x: hidden;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+input, textarea, select, .selectable { user-select: text; }
+
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar       { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+
+/* ── SCADA Panel ───────────────────────────────────────────────────────────── */
+.scada-panel {
+  background-color: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  transition: border-color 200ms ease, background-color 200ms ease;
+}
+
+.scada-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--panel-alt);
+}
+
+.scada-panel-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+/* ── Status top-line ───────────────────────────────────────────────────────── */
+.status-line-ok   { border-top: 2px solid var(--ok); }
+.status-line-warn { border-top: 2px solid var(--warn); }
+.status-line-crit { border-top: 2px solid var(--crit); }
+.status-line-info { border-top: 2px solid var(--info); }
+.status-line-none { border-top: 2px solid transparent; }
+
+/* ── Engineering number display ────────────────────────────────────────────── */
+.eng-value {
+  font-family: 'JetBrains Mono', 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  line-height: 1;
+}
+
+/* ── Progress bar ──────────────────────────────────────────────────────────── */
+.progress-track {
+  height: 5px;
+  background-color: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Sidebar nav item ──────────────────────────────────────────────────────── */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+  color: var(--text-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+.sidebar-item:hover  { background-color: var(--panel-alt); color: var(--text); }
+.sidebar-item.active { background-color: var(--accent-dim); color: var(--accent); }
+
+/* ── Tauri drag region ─────────────────────────────────────────────────────── */
+[data-tauri-drag-region] {
+  -webkit-app-region: drag;
+  app-region: drag;
+  cursor: default;
+}
+
+/* ── Status dot ────────────────────────────────────────────────────────────── */
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* ── Alarm row flash ───────────────────────────────────────────────────────── */
+.alarm-flash { animation: critFlash 1.2s ease-in-out infinite; }
+@keyframes critFlash { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }

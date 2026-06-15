@@ -1,0 +1,38 @@
+# ULTRON - Industrial IoT Monitoring System
+# Tested with Python 3.11+
+
+# Web framework & ASGI server
+fastapi==0.115.5
+uvicorn[standard]==0.32.0
+
+# WebSocket support (included in uvicorn[standard] via websockets)
+websockets==13.1
+
+# Data validation
+pydantic==2.9.2
+
+# Environment variables
+python-dotenv==1.0.1
+
+# mDNS / Zeroconf advertisement (auto-discovery)
+# Pi 4 also needs: sudo apt install avahi-daemon
+zeroconf>=0.132.0,<1.0.0
+
+# Modbus TCP + RTU server support
+# pymodbus 3.6+ is required for the class-based async server API.
+# pyserial is required for Modbus RTU over RS485 serial ports.
+pymodbus>=3.6.0,<3.7.0
+pyserial>=3.5,<4.0
+
+# Raspberry Pi GPIO (install only on hardware — skip on dev machines)
+# RPi.GPIO==0.7.1
+
+# Adafruit CircuitPython libraries — required on Pi for ADS1115 I2C ADC (pressure sensor)
+# Install on the Pi: pip install adafruit-circuitpython-ads1x15 adafruit-blinka
+# Leave commented out on Windows dev machines (imports are lazy — server still starts without them)
+# adafruit-circuitpython-ads1x15>=2.3.3,<3.0.0
+# adafruit-blinka>=8.0.0,<9.0.0
+
+# Testing
+pytest>=7.0,<9.0
+pytest-asyncio>=0.23,<1.0
