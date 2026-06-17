@@ -1,0 +1,22 @@
+{
+  "name": "ultron-phase-1",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "workspaces": [
+    "ultron-dashboard",
+    "ultron-desktop",
+    "packages/*"
+  ],
+  "scripts": {
+    "type-check": "npm run type-check --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "dev:web": "npm run dev -w ultron-dashboard",
+    "dev:desktop": "npm run dev -w ultron-desktop -- --host 0.0.0.0 --port 3001"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "typescript": "^5.5.3"
+  }
+}

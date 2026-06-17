@@ -1,0 +1,115 @@
+"""
+ULTRON - Industrial IoT Monitoring System
+Data models: Pydantic schemas for API responses and WebSocket payloads.
+"""
+
+from datetime import datetime
+from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+class SystemStatus(str, Enum):
+    HEALTHY = "healthy"
+    WARNING = "warning"
+    CRITICAL = "critical"
+    OFFLINE = "offline"
+
+
+class SensorReading(BaseModel):
+    """Single sensor data point transmitted over WebSocket and REST."""
+
+    timestamp: datetime = Field(..., description="UTC ISO-8601 timestamp of the reading")
+    pressure: float = Field(..., ge=0.0, description="Pressure in bar")
+    temperature: float = Field(..., description="Temperature in °C")
+    status: SystemStatus = Field(default=SystemStatus.HEALTHY)
+
+    model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
+
+
+class HealthResponse(BaseModel):
+    status: str
+    uptime_seconds: float
+    mode: str  # "simulated" | "hardware"
+    version: str
+
+
+class DeviceInfo(BaseModel):
+    device_id: str
+    app_name: str
+    version: str
+    pressure_sensor: str
+    temperature_sensor: str
+    broadcast_interval_ms: int
+    mode: str
+
+
+class SensorSnapshot(BaseModel):
+    """Latest cached reading returned by the REST snapshot endpoint."""
+
+    reading: Optional[SensorReading] = None
+    message: str = "No reading available yet"
+
+
+class DeviceIdentityResponse(BaseModel):
+    """
+    Static device identity payload returned by GET /api/device/identity.
+    Used by auto-discovery clients (dashboard, standalone Python agent) to confirm
+    they are talking to an ULTRON Edge device and to learn connection parameters.
+    """
+
+    device_name:         str
+    device_type:         str            # "raspberry_pi_gateway"
+    hostname:            str            # "ultron-edge"
+    machine_id:          str            # "RAV-01" — the monitored machine
+    serial_number:       str            # "Unknown / needs verification"
+    software_version:    str
+    supported_protocols: list[str]      # ["websocket", "modbus_tcp", ...]
+    api_port:            int
+    modbus_tcp_port:     int
+
+
+class ModbusStatusResponse(BaseModel):
+    """Runtime status of the Modbus subsystem — returned by GET /api/modbus/status."""
+
+    tcp_enabled:      bool
+    tcp_running:      bool
+    tcp_host:         str
+    tcp_port:         int
+    rtu_enabled:      bool
+    rtu_running:      bool
+    rtu_port:         str
+    slave_id:         int
+    byte_order:       str
+    compat_registers: bool
+    register_updates: int
+    last_update:      Optional[str] = None
+
+
+class SensorHistoryItem(BaseModel):
+    timestamp: str
+    machine_id: str
+    pressure: float
+    temperature: Optional[float]
+    status: str
+
+
+class SensorHistoryResponse(BaseModel):
+    count: int
+    total_stored: int
+    readings: list[SensorHistoryItem]
+
+
+class ModeChangeRequest(BaseModel):
+    """Request body for POST /api/control/mode."""
+
+    simulated: bool = Field(..., description="true = simulation mode, false = hardware mode")
+
+
+class ModeChangeResponse(BaseModel):
+    """Response from POST /api/control/mode."""
+
+    success:  bool   = Field(..., description="True if the mode was changed successfully")
+    mode:     str    = Field(..., description="Active mode after this request: 'simulated' or 'hardware'")
+    message:  str    = Field(..., description="Human-readable result message")

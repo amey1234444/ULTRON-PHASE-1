@@ -1,0 +1,11 @@
+# ULTRON Standalone Discovery Agent
+# Tested with Python 3.10+
+
+# mDNS / Zeroconf browsing
+zeroconf>=0.132.0,<1.0.0
+
+# Modbus TCP client
+pymodbus>=3.6.0,<4.0.0
+
+# Serial port access (for Modbus RTU scan)
+pyserial>=3.5,<4.0
