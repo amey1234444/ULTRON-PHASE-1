@@ -8,6 +8,7 @@ import type {
 import { DEFAULT_APP_SETTINGS } from '@ultron/hmi-core';
 
 const SETTINGS_KEY = 'ultron.browser.settings';
+const ENV_API_BASE = import.meta.env.VITE_API_BASE ?? '';
 
 function loadSettings(): AppSettings {
   try {
@@ -31,7 +32,8 @@ async function probe(apiBase: string): Promise<DeviceInfo> {
 
 async function backendStatus(port = 8000): Promise<BackendStatus> {
   try {
-    const res = await fetch(`http://localhost:${port}/health`, { cache: 'no-store' });
+    const healthUrl = ENV_API_BASE ? `${ENV_API_BASE}/health` : `http://localhost:${port}/health`;
+    const res = await fetch(healthUrl, { cache: 'no-store' });
     const health = await res.json();
     return {
       running: res.ok,
@@ -75,6 +77,17 @@ export const browserPlatform: HmiPlatform = {
   },
 
   async discoverDevices(lastKnownIp?: string) {
+    const found: DeviceInfo[] = [];
+
+    // Try env-configured backend first (production deployment)
+    if (ENV_API_BASE) {
+      try {
+        const device = await probe(ENV_API_BASE);
+        found.push(device);
+        return found;
+      } catch { /* fall through to local discovery */ }
+    }
+
     const ports = [8000, 8080];
     const hosts = [
       lastKnownIp,
@@ -84,7 +97,6 @@ export const browserPlatform: HmiPlatform = {
       'raspberrypi',
     ].filter(Boolean) as string[];
 
-    const found: DeviceInfo[] = [];
     for (const host of hosts) {
       for (const port of ports) {
         try {
