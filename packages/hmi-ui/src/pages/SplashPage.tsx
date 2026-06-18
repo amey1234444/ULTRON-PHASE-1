@@ -60,14 +60,27 @@ export const SplashPage: React.FC = () => {
       try { const s = await platform.getSavedSettings(); lastIp = s.last_device_ip; } catch {}
 
       advance('starting-backend');
+      let backendExternal = false;
+      let backendHealthOk = false;
       try {
         const status = await platform.startBackend();
         setBackendRunning(status.health_ok);
+        backendExternal = !!status.external;
+        backendHealthOk = !!status.health_ok;
         advance('backend-ok', status.external ? 'Backend already running (external).' : MESSAGES['backend-ok']);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setBackendError(msg);
         pushLog(`Backend warning: ${msg}`);
+      }
+
+      // If backend is running externally (cloud deployment), skip discovery and auto-connect
+      if (backendExternal && backendHealthOk) {
+        advance('found', 'Connected to cloud backend — opening dashboard…');
+        enterSim();
+        await new Promise<void>((r) => setTimeout(r, 500));
+        setAppPhase('connected');
+        return;
       }
 
       if (platform.onDiscoveryProgress) {

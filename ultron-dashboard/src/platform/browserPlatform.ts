@@ -37,21 +37,28 @@ async function probe(apiBase: string, timeoutMs = 10000): Promise<DeviceInfo> {
 }
 
 async function backendStatus(port = 8000): Promise<BackendStatus> {
-  try {
-    const healthUrl = ENV_API_BASE ? `${ENV_API_BASE}/health` : `http://localhost:${port}/health`;
-    const res = await fetch(healthUrl, { cache: 'no-store' });
-    const health = await res.json();
-    return {
-      running: res.ok,
-      pid: null,
-      port,
-      external: true,
-      health_ok: res.ok && health.status === 'ok',
-      uptime_secs: typeof health.uptime_seconds === 'number' ? health.uptime_seconds : null,
-    };
-  } catch {
-    return { running: false, pid: null, port, external: true, health_ok: false, uptime_secs: null };
+  const healthUrl = ENV_API_BASE ? `${ENV_API_BASE}/health` : `http://localhost:${port}/health`;
+  // Retry up to 3 times with increasing delay for cloud cold-start
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch(healthUrl, { cache: 'no-store', signal: controller.signal });
+      clearTimeout(timer);
+      const health = await res.json();
+      return {
+        running: res.ok,
+        pid: null,
+        port,
+        external: !!ENV_API_BASE,
+        health_ok: res.ok && health.status === 'ok',
+        uptime_secs: typeof health.uptime_seconds === 'number' ? health.uptime_seconds : null,
+      };
+    } catch {
+      if (attempt < 2) await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
+    }
   }
+  return { running: false, pid: null, port, external: !!ENV_API_BASE, health_ok: false, uptime_secs: null };
 }
 
 export const browserPlatform: HmiPlatform = {
