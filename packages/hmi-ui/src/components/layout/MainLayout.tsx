@@ -38,7 +38,7 @@ export const MainLayout: React.FC = () => {
       activeView === 'alarms' ||
       activeView === 'monitoring';
 
-    if (requiresRotaryAirlock && selectedEquipmentTypeId !== 'rotary-airlock-valve') {
+    if (requiresRotaryAirlock && !selectedEquipmentTypeId?.startsWith('rotary-airlock-valve')) {
       return <AssetSelectionPage />;
     }
 

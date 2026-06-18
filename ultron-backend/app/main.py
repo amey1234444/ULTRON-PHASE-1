@@ -20,6 +20,7 @@ from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
 from app import database as db
+from app.asset_hierarchy import router as asset_router, init_asset_db
 from app.discovery.mdns_advertiser import MDNSAdvertiser
 from app.logger import logger
 from app.models import (
@@ -148,6 +149,10 @@ async def lifespan(app: FastAPI):
     if settings.db.enabled:
         try:
             await asyncio.to_thread(db.init_db, settings.db.path, settings.db.retention_days)
+            # Initialize asset hierarchy in the same DB
+            import sqlite3
+            asset_conn = sqlite3.connect(settings.db.path, check_same_thread=False)
+            init_asset_db(asset_conn)
         except Exception as exc:
             logger.error("DB init failed — persistence disabled: %s", exc)
 
@@ -228,9 +233,11 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+app.include_router(asset_router)
 
 
 # ---------------------------------------------------------------------------
