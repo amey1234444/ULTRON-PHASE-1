@@ -11,7 +11,7 @@ import {
   type AssetNode,
   type EquipmentTypeId,
 } from '../store/assetHierarchyStore';
-import { useConnectionStore } from '../store/connectionStore';
+import { useConnectionStore, SIMULATION_CONFIG } from '../store/connectionStore';
 
 const LEVEL_TITLES: Record<AssetLevel, string> = {
   company: 'Select Company',
@@ -204,7 +204,7 @@ function OptionCard({ node, selected, onClick, onEdit, onDelete }: {
 // ---------------------------------------------------------------------------
 
 export const AssetSelectionPage: React.FC = () => {
-  const apiBase = useConnectionStore((s) => s.config?.apiBase ?? 'http://localhost:8000');
+  const apiBase = useConnectionStore((s) => s.config?.apiBase) ?? SIMULATION_CONFIG.apiBase;
   const tree = useAssetHierarchyStore((s) => s.tree);
   const fetchTree = useAssetHierarchyStore((s) => s.fetchTree);
   const addNode = useAssetHierarchyStore((s) => s.addNode);
