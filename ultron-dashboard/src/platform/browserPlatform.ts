@@ -23,11 +23,17 @@ function persistSettings(settings: AppSettings): void {
   localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
-async function probe(apiBase: string): Promise<DeviceInfo> {
-  const res = await fetch(`${apiBase}/api/device/identity`, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`No ULTRON device found at ${apiBase}`);
-  const device = await res.json() as Omit<DeviceInfo, 'api_base'>;
-  return { ...device, api_base: apiBase };
+async function probe(apiBase: string, timeoutMs = 10000): Promise<DeviceInfo> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${apiBase}/api/device/identity`, { cache: 'no-store', signal: controller.signal });
+    if (!res.ok) throw new Error(`No ULTRON device found at ${apiBase}`);
+    const device = await res.json() as Omit<DeviceInfo, 'api_base'>;
+    return { ...device, api_base: apiBase };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function backendStatus(port = 8000): Promise<BackendStatus> {
@@ -80,9 +86,10 @@ export const browserPlatform: HmiPlatform = {
     const found: DeviceInfo[] = [];
 
     // Try env-configured backend first (production deployment)
+    // Use longer timeout for cloud hosts that may cold-start (e.g. Render free tier)
     if (ENV_API_BASE) {
       try {
-        const device = await probe(ENV_API_BASE);
+        const device = await probe(ENV_API_BASE, 45000);
         found.push(device);
         return found;
       } catch { /* fall through to local discovery */ }
