@@ -182,9 +182,10 @@ export const HistoricalTrendsPage: React.FC = () => {
         className="flex-shrink-0"
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           gap: 8,
-          padding: '10px 16px',
+          padding: '10px 12px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--panel)',
         }}
@@ -310,7 +311,7 @@ export const HistoricalTrendsPage: React.FC = () => {
       {stats && (
         <div
           className="flex-shrink-0 animate-fade-in"
-          style={{ display: 'flex', gap: 10, padding: '10px 16px', background: 'var(--surface)' }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, padding: '10px 12px', background: 'var(--surface)' }}
         >
           <StatCard
             label="Pressure (latest)"
@@ -346,18 +347,18 @@ export const HistoricalTrendsPage: React.FC = () => {
       {/* ── Charts Area ─────────────────────────────────────────────────────── */}
       <div
         className="flex-1 overflow-auto"
-        style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
+        style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 12 }}
       >
         {viewMode === 'combined' ? (
-          <div style={{ flex: 1, minHeight: 400 }}>
+          <div style={{ flex: 1, minHeight: 250 }}>
             <MultiTrendChart readings={allReadings} historical={isHistorical} />
           </div>
         ) : (
           <>
-            <div style={{ flex: 1, minHeight: 280 }}>
+            <div style={{ flex: 1, minHeight: 200 }}>
               <TrendChart type="pressure" readings={allReadings} />
             </div>
-            <div style={{ flex: 1, minHeight: 280 }}>
+            <div style={{ flex: 1, minHeight: 200 }}>
               <TrendChart type="temperature" readings={allReadings} />
             </div>
           </>

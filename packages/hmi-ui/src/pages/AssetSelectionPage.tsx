@@ -318,8 +318,8 @@ export const AssetSelectionPage: React.FC = () => {
     : 'Start from Company in the left hierarchy, drill down to Equipments, then select Rotary Airlock Valve to view the current live HMI.';
 
   return (
-    <div className="h-full overflow-auto p-6">
-      <div className="w-full max-w-6xl mx-auto space-y-4">
+    <div className="h-full overflow-auto p-3 sm:p-6">
+      <div className="w-full max-w-6xl mx-auto space-y-3 sm:space-y-4">
         <div className="scada-panel overflow-hidden">
           <div className="scada-panel-header">
             <div>

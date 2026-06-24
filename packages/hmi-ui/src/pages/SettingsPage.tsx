@@ -154,7 +154,7 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
         {saving && <span className="ml-auto text-xs" style={{ color: 'var(--warn)' }}>Saving…</span>}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 max-w-2xl w-full mx-auto">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 max-w-2xl w-full mx-auto">
 
         <Section title="BACKEND SERVICE">
           <Row label="Status">
