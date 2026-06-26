@@ -299,6 +299,22 @@ async def health() -> HealthResponse:
     )
 
 
+@app.get("/api/build-info", tags=["System"])
+async def build_info() -> ORJSONResponse:
+    """Returns build/deployment info to verify which code version is running."""
+    import importlib
+    has_httpx = importlib.util.find_spec("httpx") is not None
+    has_bridge = importlib.util.find_spec("app.bridge_manager") is not None
+    paths = [r.path for r in app.routes if hasattr(r, "path")]
+    return ORJSONResponse({
+        "build_version": "v3-bridge-enabled",
+        "httpx_installed": has_httpx,
+        "bridge_manager_available": has_bridge,
+        "total_endpoints": len(paths),
+        "bridge_endpoints": [p for p in paths if "bridge" in p],
+    })
+
+
 @app.get("/device", response_model=DeviceInfo, tags=["System"])
 async def device_info() -> DeviceInfo:
     """Static device metadata — useful for dashboard identification panels."""

@@ -1,9 +1,10 @@
 services:
   - type: web
     name: ultron-backend
-    runtime: docker
-    dockerfilePath: ./ultron-backend/Dockerfile
-    dockerContext: ./ultron-backend
+    runtime: python
+    rootDir: ./ultron-backend
+    buildCommand: pip install -r requirements.txt && python -c "import httpx; print('httpx OK')" && python -c "from app.bridge_manager import BridgeManager; print('BridgeManager OK')"
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1 --loop uvloop --http httptools
     plan: free
     envVars:
       - key: SIMULATED
@@ -24,4 +25,6 @@ services:
         value: "false"
       - key: LOG_LEVEL
         value: "INFO"
+      - key: PYTHON_VERSION
+        value: "3.12.0"
     healthCheckPath: /health

@@ -1,4 +1,4 @@
-# ── ULTRON Backend ── production image (v2 - force httpx install)
+# ── ULTRON Backend ── production image (v3 - guaranteed httpx)
 FROM python:3.12-slim AS base
 
 # Prevent Python from writing .pyc and enable unbuffered stdout
@@ -7,20 +7,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Force-install httpx FIRST (bypasses any Docker layer cache issues with
-# requirements.txt), then install the rest from requirements.txt.
-# The explicit httpx install guarantees BridgeManager can import it.
+# Install ALL dependencies including httpx explicitly
 COPY requirements.txt .
 RUN pip install --no-cache-dir "httpx>=0.27.0" \
     && pip install --no-cache-dir -r requirements.txt \
     && python -c "import httpx; print(f'httpx {httpx.__version__} OK')" \
     && python -c "import fastapi, uvicorn, websockets, pydantic, orjson; print('core deps OK')"
 
-# Copy application code
+# Copy application code and startup script
+COPY start.sh .
 COPY app/ app/
 COPY data/ data/
 
-# Verify all critical imports work at build time (fails build if bridge_manager broken)
+# Verify all critical imports work at build time
 RUN python -c "from app.bridge_manager import BridgeManager; print('BridgeManager imports OK')" \
     && python -c "from app.main import app; print('FastAPI app imports OK')"
 
@@ -42,4 +41,5 @@ EXPOSE 8000 5020
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8000}/health')" || exit 1
 
-CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1 --loop uvloop --http httptools"]
+# Use startup script: verifies httpx at runtime, installs if missing, then launches
+CMD ["sh", "/app/start.sh"]
