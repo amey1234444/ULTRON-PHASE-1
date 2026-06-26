@@ -31,7 +31,7 @@ export const DashboardPage: React.FC<Props> = ({ alarmsOnly }) => {
     return (
       <div className="flex flex-col h-full">
         {isSim && <SimBanner />}
-        <div className="flex-1 overflow-auto p-4"><AlarmPanel /></div>
+        <div className="flex-1 overflow-auto p-2 sm:p-4"><AlarmPanel /></div>
       </div>
     );
   }
@@ -40,21 +40,21 @@ export const DashboardPage: React.FC<Props> = ({ alarmsOnly }) => {
     <div className="flex flex-col h-full overflow-hidden">
       {isSim && <SimBanner />}
 
-      <div className="flex flex-col flex-1 min-h-0 p-3 gap-3">
+      <div className="flex flex-col flex-1 min-h-0 p-2 sm:p-3 gap-2 sm:gap-3">
 
         {/* Row 1 — metric cards */}
-        <div className="flex-shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3 animate-fade-in">
+        <div className="flex-shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 animate-fade-in">
           <PressureCard />
           <TemperatureCard />
           <HealthScoreCard />
         </div>
 
-        {/* Row 2 — digital twin (2/3) + trend chart (1/3) */}
-        <div className="flex gap-3 animate-slide-up" style={{ flex: 1, minHeight: 0 }}>
-          <div style={{ flex: 2, minHeight: 0 }}>
+        {/* Row 2 — digital twin + trend chart: vertical on mobile, side-by-side on desktop */}
+        <div className="flex flex-col lg:flex-row gap-2 sm:gap-3 animate-slide-up" style={{ flex: 1, minHeight: 0 }}>
+          <div className="lg:flex-[2] min-h-[200px] sm:min-h-[280px]" style={{ minHeight: 0 }}>
             <ProcessOverview />
           </div>
-          <div style={{ flex: 1, minHeight: 0 }}>
+          <div className="lg:flex-[1] min-h-[200px] sm:min-h-[240px]" style={{ minHeight: 0 }}>
             <MultiTrendChart readings={trendReadings} historical={trendReadings.length > 600} />
           </div>
         </div>

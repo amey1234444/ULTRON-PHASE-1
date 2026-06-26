@@ -134,7 +134,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ collapsed, active, onNavigate,
       className={cn(
         'flex flex-col h-full flex-shrink-0 overflow-hidden',
         'border-r transition-all duration-200',
-        collapsed ? 'w-[56px]' : 'w-[220px]',
+        collapsed ? 'w-[56px]' : 'w-[220px] max-w-[80vw]',
       )}
       style={{ background: 'var(--sidebar)', borderColor: 'var(--border)' }}
     >

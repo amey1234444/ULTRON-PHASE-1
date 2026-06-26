@@ -10,6 +10,7 @@ import io
 import json
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 import orjson
@@ -20,9 +21,13 @@ from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
 from app import database as db
+from app.asset_hierarchy import router as asset_router, init_asset_db
 from app.discovery.mdns_advertiser import MDNSAdvertiser
 from app.logger import logger
 from app.models import (
+    BridgeListResponse,
+    BridgeRegisterRequest,
+    BridgeRegisterResponse,
     DeviceIdentityResponse,
     DeviceInfo,
     HealthResponse,
@@ -34,6 +39,7 @@ from app.models import (
 )
 from app.modbus.modbus_service import ModbusService
 from app.modbus.register_map import build_register_documentation
+from app.bridge_manager import BridgeManager
 from app.sensor_manager import SensorManager
 from app.websocket_manager import WebSocketManager
 
@@ -44,6 +50,7 @@ from app.websocket_manager import WebSocketManager
 sensor_manager  = SensorManager()
 ws_manager      = WebSocketManager()
 modbus_service  = ModbusService()
+bridge_manager  = BridgeManager()
 mdns_advertiser = MDNSAdvertiser(
     device_name     = settings.discovery.device_name,
     hostname        = settings.discovery.hostname,
@@ -59,20 +66,53 @@ _reading_buffer: list = []  # staging area — flushed to SQLite every DB_BATCH_
 # Combined sensor loop — read → broadcast WebSocket → update Modbus registers
 # ---------------------------------------------------------------------------
 
+async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> None:
+    """
+    Called by BridgeManager when real data arrives from a registered bridge.
+    Creates a SensorReading from the bridge data and broadcasts it.
+    """
+    from app.models import SensorReading, SystemStatus
+
+    status = sensor_manager._derive_status(pressure, temperature)
+    reading = SensorReading(
+        timestamp=datetime.now(timezone.utc),
+        pressure=pressure,
+        temperature=temperature,
+        status=status,
+    )
+    sensor_manager._latest = reading
+    await ws_manager.broadcast(reading)
+    modbus_service.update_registers(
+        reading, uptime_s=time.monotonic() - _start_time
+    )
+    if settings.db.enabled:
+        _reading_buffer.append({
+            "timestamp":   reading.timestamp.isoformat(),
+            "machine_id":  settings.machine_id,
+            "pressure":    reading.pressure,
+            "temperature": reading.temperature,
+            "status":      reading.status.value,
+        })
+    logger.debug(
+        "Bridge data: P=%.2f T=%.2f from %s",
+        pressure, temperature, bridge_info.url,
+    )
+
+
 async def _sensor_loop(interval: float) -> None:
     """
-    Single read-and-distribute loop that:
-      1. Reads both sensors concurrently (via SensorManager).
-      2. Broadcasts the JSON payload to all WebSocket clients.
-      3. Writes all Modbus Input Registers with the new values.
-
-    Runs as a named asyncio.Task for the lifetime of the server.
-    Individual read/broadcast/register errors are logged and skipped;
-    the loop never exits on its own.
+    Fallback sensor loop: only runs when NO bridge is actively sending data.
+    When bridges are registered and connected, the bridge_manager's poll loop
+    handles data distribution instead (via _on_bridge_data callback).
     """
     logger.info("Sensor loop started  (interval=%.0f ms)", interval * 1000)
     while True:
         try:
+            # Skip simulated reads when bridge data is flowing
+            if bridge_manager.has_active_bridges:
+                await asyncio.sleep(interval)
+                continue
+
             reading = await sensor_manager.read()
             await ws_manager.broadcast(reading)
             modbus_service.update_registers(
@@ -148,6 +188,10 @@ async def lifespan(app: FastAPI):
     if settings.db.enabled:
         try:
             await asyncio.to_thread(db.init_db, settings.db.path, settings.db.retention_days)
+            # Initialize asset hierarchy in the same DB
+            import sqlite3
+            asset_conn = sqlite3.connect(settings.db.path, check_same_thread=False)
+            init_asset_db(asset_conn)
         except Exception as exc:
             logger.error("DB init failed — persistence disabled: %s", exc)
 
@@ -160,6 +204,10 @@ async def lifespan(app: FastAPI):
     # Advertise via mDNS so the dashboard auto-discovers this device
     if settings.discovery.mdns_enabled:
         await mdns_advertiser.start_async()
+
+    # Start bridge manager (polls registered bridge endpoints)
+    bridge_manager.set_data_callback(_on_bridge_data)
+    await bridge_manager.start()
 
     # Start the combined sensor → WS → Modbus loop
     sensor_task = asyncio.create_task(
@@ -195,6 +243,7 @@ async def lifespan(app: FastAPI):
             await asyncio.to_thread(db.flush_readings, _reading_buffer.copy())
         db.close_db()
 
+    await bridge_manager.stop()
     await modbus_service.stop()
     if settings.discovery.mdns_enabled:
         await mdns_advertiser.stop_async()
@@ -228,9 +277,11 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+app.include_router(asset_router)
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +489,70 @@ async def modbus_register_map() -> ORJSONResponse:
     - Reserved Holding Register (4xxxx) plan for future configuration writes
     """
     return ORJSONResponse(content=build_register_documentation())
+
+
+# ---------------------------------------------------------------------------
+# REST endpoints — Bridge Management
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/api/bridges/register",
+    response_model=BridgeRegisterResponse,
+    tags=["Bridges"],
+    summary="Register a bridge endpoint for live data polling",
+)
+async def register_bridge(request: BridgeRegisterRequest) -> BridgeRegisterResponse:
+    """
+    Register a bridge IP:port so the backend starts polling it for real sensor data.
+
+    Example:
+        POST /api/bridges/register
+        {"url": "http://192.168.1.100:8765"}
+
+    The backend will poll {url}/api/live every 1 second and broadcast the data
+    via WebSocket to all connected dashboard clients.
+    """
+    url = request.url.strip().rstrip("/")
+    if not url.startswith("http"):
+        url = "http://" + url
+
+    bridge = await bridge_manager.register(url)
+    logger.info("Bridge registered via API: %s (id=%s)", url, bridge.id)
+    return BridgeRegisterResponse(
+        success=True,
+        bridge_id=bridge.id,
+        url=bridge.url,
+        message=f"Bridge registered. Polling {bridge.url}/api/live every 1s.",
+    )
+
+
+@app.get(
+    "/api/bridges",
+    response_model=BridgeListResponse,
+    tags=["Bridges"],
+    summary="List all registered bridge endpoints",
+)
+async def list_bridges() -> BridgeListResponse:
+    """Returns all registered bridges with their current connection status."""
+    bridges = await bridge_manager.list_bridges()
+    return BridgeListResponse(count=len(bridges), bridges=bridges)
+
+
+@app.delete(
+    "/api/bridges/{bridge_id}",
+    tags=["Bridges"],
+    summary="Unregister a bridge endpoint",
+)
+async def unregister_bridge(bridge_id: str) -> ORJSONResponse:
+    """Remove a registered bridge by its ID. Polling stops immediately."""
+    removed = await bridge_manager.unregister(bridge_id)
+    if removed:
+        logger.info("Bridge unregistered via API: %s", bridge_id)
+        return ORJSONResponse(content={"success": True, "message": "Bridge removed"})
+    return ORJSONResponse(
+        content={"success": False, "message": "Bridge not found"},
+        status_code=404,
+    )
 
 
 # ---------------------------------------------------------------------------

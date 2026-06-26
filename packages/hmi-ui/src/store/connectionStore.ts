@@ -25,9 +25,17 @@ interface ConnectionStore {
   clearConfig:     ()                      => void;
 }
 
+const ENV_API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE
+  ? import.meta.env.VITE_API_BASE
+  : 'http://localhost:8000';
+
+const ENV_WS_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_URL
+  ? import.meta.env.VITE_WS_URL
+  : ENV_API_BASE.replace(/^http/, 'ws') + '/ws';
+
 export const SIMULATION_CONFIG: ConnectionConfig = {
-  apiBase:    'http://localhost:8000',
-  wsUrl:      'ws://localhost:8000/ws',
+  apiBase:    ENV_API_BASE,
+  wsUrl:      ENV_WS_URL,
   deviceName: 'ULTRON Edge (Simulated)',
   deviceIp:   'localhost',
   deviceType: 'simulation',

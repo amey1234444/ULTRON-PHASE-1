@@ -113,3 +113,29 @@ class ModeChangeResponse(BaseModel):
     success:  bool   = Field(..., description="True if the mode was changed successfully")
     mode:     str    = Field(..., description="Active mode after this request: 'simulated' or 'hardware'")
     message:  str    = Field(..., description="Human-readable result message")
+
+
+# ---------------------------------------------------------------------------
+# Bridge registration models
+# ---------------------------------------------------------------------------
+
+class BridgeRegisterRequest(BaseModel):
+    """Request body for POST /api/bridges/register."""
+
+    url: str = Field(..., description="Bridge URL (e.g. http://192.168.1.100:8765)")
+
+
+class BridgeRegisterResponse(BaseModel):
+    """Response from POST /api/bridges/register."""
+
+    success: bool
+    bridge_id: str
+    url: str
+    message: str
+
+
+class BridgeListResponse(BaseModel):
+    """Response from GET /api/bridges."""
+
+    count: int
+    bridges: list[dict]

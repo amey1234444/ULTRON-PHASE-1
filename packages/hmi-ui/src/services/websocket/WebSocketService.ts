@@ -21,6 +21,8 @@ export interface WebSocketCallbacks {
 }
 
 const PING_INTERVAL_MS = 2_000;
+const LATENCY_WINDOW   = 5;   // rolling average over last N pongs
+const MAX_LATENCY_MS   = 9_999; // cap display at 10s
 
 export class WebSocketService {
   private ws:             WebSocket | null = null;
@@ -28,8 +30,9 @@ export class WebSocketService {
   private pingTimer:      ReturnType<typeof setInterval> | null = null;
   private _destroyed      = false;
   private _consecutiveFails = 0;
-  /** One-way latency in ms derived from the most recent pong.  0 = no pong yet. */
+  /** One-way latency in ms (rolling avg, capped). 0 = no pong yet. */
   private _latencyMs      = 0;
+  private _latencyHistory: number[] = [];
 
   get consecutiveFails(): number { return this._consecutiveFails; }
 
@@ -51,6 +54,7 @@ export class WebSocketService {
       if (this._destroyed || ws !== this.ws) return;
       this._consecutiveFails = 0;
       this._latencyMs        = 0;   // reset until first pong
+      this._latencyHistory   = [];
       this.callbacks.onStatusChange('connected');
       this._startPing();
     };
@@ -60,9 +64,17 @@ export class WebSocketService {
       try {
         const frame = JSON.parse(evt.data) as Record<string, unknown>;
 
-        // Pong response — measure RTT and derive one-way latency
+        // Pong response — measure RTT and derive one-way latency (rolling avg, capped)
         if (frame.type === 'pong' && typeof frame.t === 'number') {
-          this._latencyMs = Math.max(0, Math.round((Date.now() - frame.t) / 2));
+          const rtt = Date.now() - (frame.t as number);
+          const oneWay = Math.max(0, Math.round(rtt / 2));
+          const capped = Math.min(oneWay, MAX_LATENCY_MS);
+          this._latencyHistory.push(capped);
+          if (this._latencyHistory.length > LATENCY_WINDOW) {
+            this._latencyHistory.shift();
+          }
+          const sum = this._latencyHistory.reduce((a, b) => a + b, 0);
+          this._latencyMs = Math.round(sum / this._latencyHistory.length);
           return;
         }
 

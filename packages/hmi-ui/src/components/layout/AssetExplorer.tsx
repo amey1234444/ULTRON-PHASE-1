@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  ASSET_HIERARCHY,
+  getCompanies,
   getSelectedArea,
   getSelectedCompany,
   getSelectedEquipment,
@@ -130,8 +130,9 @@ export const AssetExplorer: React.FC<{ collapsed: boolean }> = ({ collapsed }) =
     !equipment ? 'equipment' :
     'equipmentType';
 
+  const companies = getCompanies();
   const nodes =
-    level === 'company' ? ASSET_HIERARCHY.companies :
+    level === 'company' ? companies :
     level === 'plant' ? company?.plants ?? [] :
     level === 'area' ? plant?.areas ?? [] :
     level === 'machine' ? area?.machines ?? [] :

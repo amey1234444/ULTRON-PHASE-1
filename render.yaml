@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: ultron-backend
+    runtime: docker
+    dockerfilePath: ./ultron-backend/Dockerfile
+    dockerContext: ./ultron-backend
+    plan: free
+    envVars:
+      - key: SIMULATED
+        value: "true"
+      - key: HOST
+        value: "0.0.0.0"
+      - key: BROADCAST_INTERVAL_MS
+        value: "100"
+      - key: DB_ENABLED
+        value: "true"
+      - key: DB_PATH
+        value: "/app/data/ultron.db"
+      - key: MODBUS_TCP_ENABLED
+        value: "false"
+      - key: MODBUS_RTU_ENABLED
+        value: "false"
+      - key: MDNS_ENABLED
+        value: "false"
+      - key: LOG_LEVEL
+        value: "INFO"
+    healthCheckPath: /health

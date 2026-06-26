@@ -1,0 +1,52 @@
+name: Deploy Dashboard to Vercel
+
+on:
+  push:
+    branches:
+      - main
+      - devin/1781713168-deploy-live
+    paths:
+      - 'packages/hmi-ui/**'
+      - 'ultron-dashboard/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-dashboard.yml'
+
+env:
+  VITE_API_BASE: https://ultron-backend-pakd.onrender.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dashboard
+        run: npm run build --workspace=ultron-dashboard
+
+      - name: Install Vercel CLI
+        run: npm i -g vercel@latest
+
+      - name: Create Vercel project config
+        run: |
+          mkdir -p ultron-dashboard/dist/.vercel
+          echo '{"projectId":"prj_nEdxlip5GwlNcCfz1K8zWJoikoL7","orgId":"team_fDtnrpObpUyhC7HczRIDl7DH"}' > ultron-dashboard/dist/.vercel/project.json
+          cat > ultron-dashboard/dist/vercel.json << 'VJSON'
+          {
+            "buildCommand": "",
+            "installCommand": "",
+            "outputDirectory": ".",
+            "rewrites": [{"source": "/(.*)", "destination": "/index.html"}]
+          }
+          VJSON
+
+      - name: Deploy to Vercel Production
+        run: cd ultron-dashboard/dist && vercel deploy --token ${{ secrets.VERCEL_TOKEN }} --yes --prod

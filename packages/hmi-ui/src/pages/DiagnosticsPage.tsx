@@ -83,7 +83,7 @@ export const DiagnosticsPage: React.FC<Props> = ({ onBack }) => {
         <span className="text-sm font-bold tracking-widest uppercase" style={{ color: 'var(--text)' }}>Diagnostics</span>
       </div>
 
-      <div className="flex-1 overflow-auto p-4 max-w-2xl w-full mx-auto">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 max-w-2xl w-full mx-auto">
 
         <Section title="CONNECTION">
           <Row label="WebSocket" value={
