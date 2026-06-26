@@ -7,13 +7,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (layer caching)
+# Install dependencies (copy + install in single layer to avoid cache staleness)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && python -c "import httpx; print(f'httpx {httpx.__version__} OK')"
 
 # Copy application code
 COPY app/ app/
 COPY data/ data/
+
+# Verify all critical imports work at build time
+RUN python -c "from app.bridge_manager import BridgeManager; print('bridge_manager imports OK')"
 
 # Default environment: simulated mode, all features enabled
 ENV SIMULATED=true \
