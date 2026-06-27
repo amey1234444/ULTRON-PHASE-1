@@ -215,7 +215,50 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full Pi setup including GPIO, I
 | POST | `/api/control/mode` | Switch simulated/hardware mode |
 | GET | `/api/modbus/status` | Modbus subsystem status |
 | GET | `/api/modbus/register-map` | Full register map docs |
+| POST | `/api/bridges/register` | Register a bridge URL for the backend to **poll** (pull mode) |
+| POST | `/api/bridges/ingest` | Receive a reading **pushed** by a bridge (push mode) |
+| GET | `/api/bridges` | List registered bridges and their status |
+| DELETE | `/api/bridges/{id}` | Unregister a bridge |
 | WS | `/ws` | Real-time sensor stream (10 Hz) |
+
+## Bridge Data Acquisition (`ultron_bridge.py`)
+
+`ultron_bridge.py` is a standalone script that exposes pressure/temperature data
+(synthetic in `--mode dummy`, or parsed from an STM32 page in `--mode hardware`).
+There are two ways to get its data into the backend → dashboard:
+
+### Pull mode (backend polls the bridge) — for LAN deployments
+
+Use when the **backend can reach the bridge** over the network (same LAN, or the
+bridge has a public/forwarded address).
+
+```bash
+python ultron_bridge.py --mode dummy --port 8765
+```
+
+Then add the bridge in the dashboard **Settings → Bridge Configuration** as
+`http://<bridge-ip>:8765`. The backend polls `{url}/api/live` every second and
+broadcasts the readings over WebSocket.
+
+> ⚠️ If the backend is hosted in the cloud (e.g. Render) and the bridge runs on a
+> private LAN (`192.168.x.x` / `localhost`), the cloud backend **cannot** reach
+> back into your network, so polling will fail. Use push mode instead.
+
+### Push mode (bridge pushes to the backend) — for cloud backends / NAT
+
+Use when the **bridge can reach the backend** (outbound internet) but not the
+other way around. The bridge POSTs each reading to `/api/bridges/ingest`, so it
+works through NAT/firewalls with no port forwarding.
+
+```bash
+python ultron_bridge.py --mode dummy \
+    --push-url https://ultron-backend-pakd.onrender.com \
+    --source BRIDGE-001
+```
+
+No manual registration is needed — the bridge appears automatically under
+**Settings → Bridge Configuration** (labelled `PUSH`) once it starts pushing, and
+its data streams straight to the dashboard.
 
 ## Performance Optimizations
 

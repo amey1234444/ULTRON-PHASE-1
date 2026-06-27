@@ -139,3 +139,31 @@ class BridgeListResponse(BaseModel):
 
     count: int
     bridges: list[dict]
+
+
+class BridgeIngestRequest(BaseModel):
+    """
+    Request body for POST /api/bridges/ingest (push model).
+
+    A bridge running on a private LAN POSTs its readings here so the backend
+    receives data without having to reach back into the bridge's network.
+    Extra fields (e.g. fault, mode, pressureBar) are preserved and forwarded
+    to the same normalization path used for polled bridges.
+    """
+
+    model_config = {"extra": "allow"}
+
+    source: Optional[str] = Field(
+        default=None,
+        description="Stable identifier for this bridge (machine_id, hostname, etc.)",
+    )
+    pressure: Optional[float] = None
+    temperature: Optional[float] = None
+
+
+class BridgeIngestResponse(BaseModel):
+    """Response from POST /api/bridges/ingest."""
+
+    success: bool
+    bridge_id: str
+    message: str

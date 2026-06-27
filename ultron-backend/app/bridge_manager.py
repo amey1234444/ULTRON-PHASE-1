@@ -29,9 +29,10 @@ STALE_AFTER_S = 10.0
 class BridgeInfo:
     """Runtime state for a single registered bridge."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, is_push: bool = False) -> None:
         self.id: str = uuid.uuid4().hex[:12]
         self.url: str = url.rstrip("/")
+        self.is_push: bool = is_push  # True = bridge pushes data to us (works behind NAT)
         self.status: str = "connecting"  # connecting | connected | error
         self.last_seen: float = 0.0
         self.last_error: Optional[str] = None
@@ -44,6 +45,7 @@ class BridgeInfo:
         return {
             "id": self.id,
             "url": self.url,
+            "isPush": self.is_push,
             "status": self.status,
             "lastSeen": self.last_seen,
             "lastError": self.last_error,
@@ -178,6 +180,45 @@ class BridgeManager:
         logger.info("Bridge registered: %s (id=%s)", url, bridge.id)
         return bridge
 
+    async def ingest(self, source: str, raw: dict) -> BridgeInfo:
+        """
+        Handle a reading PUSHED by a bridge (push model).
+
+        Unlike register/poll, the bridge initiates an outbound connection to this
+        backend, so it works even when the bridge sits behind NAT/firewall on a
+        private LAN while the backend runs in the cloud. A virtual bridge entry
+        (url = "push://<source>") is created/updated so pushed sources appear in
+        the dashboard's bridge list just like polled ones.
+        """
+        url = f"push://{source}"
+
+        async with self._lock:
+            bridge: Optional[BridgeInfo] = None
+            for existing in self._bridges.values():
+                if existing.url == url:
+                    bridge = existing
+                    break
+            if bridge is None:
+                bridge = BridgeInfo(url, is_push=True)
+                self._bridges[bridge.id] = bridge
+                logger.info("Push bridge registered: %s (id=%s)", url, bridge.id)
+
+        normalized = _normalize_bridge_data(raw)
+        bridge.latest_data = normalized
+        bridge.status = "connected"
+        bridge.last_seen = time.time()
+        bridge.poll_count += 1
+        bridge.last_error = None
+
+        if self._on_data_callback:
+            await self._on_data_callback(
+                normalized["pressure"],
+                normalized["temperature"],
+                bridge,
+            )
+
+        return bridge
+
     async def unregister(self, bridge_id: str) -> bool:
         """Remove a bridge by ID. Returns True if found and removed."""
         async with self._lock:
@@ -210,11 +251,21 @@ class BridgeManager:
         while True:
             try:
                 async with self._lock:
-                    bridges = list(self._bridges.values())
+                    all_bridges = list(self._bridges.values())
 
-                if bridges:
-                    tasks = [self._poll_one(b) for b in bridges]
+                # Only actively poll pull-mode bridges; push bridges deliver
+                # their own data via the ingest endpoint.
+                pollable = [b for b in all_bridges if not b.is_push]
+                if pollable:
+                    tasks = [self._poll_one(b) for b in pollable]
                     await asyncio.gather(*tasks, return_exceptions=True)
+
+                # Mark push bridges stale if they stopped pushing.
+                now = time.time()
+                for b in all_bridges:
+                    if b.is_push and b.last_seen > 0 and (now - b.last_seen) > STALE_AFTER_S:
+                        b.status = "error"
+                        b.last_error = "No data pushed recently"
 
             except asyncio.CancelledError:
                 raise

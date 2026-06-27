@@ -25,6 +25,8 @@ from app.asset_hierarchy import router as asset_router, init_asset_db
 from app.discovery.mdns_advertiser import MDNSAdvertiser
 from app.logger import logger
 from app.models import (
+    BridgeIngestRequest,
+    BridgeIngestResponse,
     BridgeListResponse,
     BridgeRegisterRequest,
     BridgeRegisterResponse,
@@ -523,6 +525,38 @@ async def register_bridge(request: BridgeRegisterRequest) -> BridgeRegisterRespo
         bridge_id=bridge.id,
         url=bridge.url,
         message=f"Bridge registered. Polling {bridge.url}/api/live every 1s.",
+    )
+
+
+@app.post(
+    "/api/bridges/ingest",
+    response_model=BridgeIngestResponse,
+    tags=["Bridges"],
+    summary="Receive live data pushed by a bridge (push model)",
+)
+async def ingest_bridge_data(request: BridgeIngestRequest) -> BridgeIngestResponse:
+    """
+    Accept a sensor reading PUSHED by a bridge instead of polling the bridge.
+
+    Use this when the bridge runs on a private LAN but the backend is hosted in
+    the cloud (e.g. Render): the bridge can reach the backend over the internet,
+    but the backend cannot reach back into the bridge's network. Run the bridge
+    with `--push-url <backend>` and it will POST readings here every second.
+
+    Example:
+        POST /api/bridges/ingest
+        {"source": "BRIDGE-001", "pressure": 7.2, "temperature": 81.5}
+
+    The reading is normalized and broadcast over WebSocket to all dashboards,
+    exactly like polled bridge data.
+    """
+    raw = request.model_dump()
+    source = request.source or "default"
+    bridge = await bridge_manager.ingest(str(source), raw)
+    return BridgeIngestResponse(
+        success=True,
+        bridge_id=bridge.id,
+        message="ok",
     )
 
 
