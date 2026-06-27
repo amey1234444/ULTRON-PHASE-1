@@ -9,6 +9,8 @@ export interface SensorReading {
   status?:     SystemStatus;
   /** Extra fields sent by some Pi backends (ignored by core logic) */
   machine_id?: string;
+  /** Matched asset node id when the reading was routed via a device binding */
+  device_id?:  string;
   mode?:       string;
   sequence?:   number;
 }

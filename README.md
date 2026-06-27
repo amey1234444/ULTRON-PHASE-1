@@ -215,7 +215,71 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for full Pi setup including GPIO, I
 | POST | `/api/control/mode` | Switch simulated/hardware mode |
 | GET | `/api/modbus/status` | Modbus subsystem status |
 | GET | `/api/modbus/register-map` | Full register map docs |
+| POST | `/api/bridges/register` | Register a bridge URL for the backend to **poll** (pull mode) |
+| POST | `/api/bridges/ingest` | Receive a reading **pushed** by a bridge (push mode) |
+| GET | `/api/bridges` | List registered bridges and their status |
+| DELETE | `/api/bridges/{id}` | Unregister a bridge |
 | WS | `/ws` | Real-time sensor stream (10 Hz) |
+
+## Bridge Data Acquisition (`ultron_bridge.py`)
+
+`ultron_bridge.py` is a standalone script that exposes pressure/temperature data
+(synthetic in `--mode dummy`, or parsed from an STM32 page in `--mode hardware`).
+There are two ways to get its data into the backend → dashboard:
+
+### Pull mode (backend polls the bridge) — for LAN deployments
+
+Use when the **backend can reach the bridge** over the network (same LAN, or the
+bridge has a public/forwarded address).
+
+```bash
+python ultron_bridge.py --mode dummy --port 8765
+```
+
+Then add the bridge in the dashboard **Settings → Bridge Configuration** as
+`http://<bridge-ip>:8765`. The backend polls `{url}/api/live` every second and
+broadcasts the readings over WebSocket.
+
+> ⚠️ If the backend is hosted in the cloud (e.g. Render) and the bridge runs on a
+> private LAN (`192.168.x.x` / `localhost`), the cloud backend **cannot** reach
+> back into your network, so polling will fail. Use push mode instead.
+
+### Push mode (bridge pushes to the backend) — for cloud backends / NAT
+
+Use when the **bridge can reach the backend** (outbound internet) but not the
+other way around. The bridge POSTs each reading to `/api/bridges/ingest`, so it
+works through NAT/firewalls with no port forwarding.
+
+```bash
+python ultron_bridge.py --mode dummy \
+    --push-url https://ultron-backend-pakd.onrender.com \
+    --machine-id RAV-01 --ip 192.168.1.50
+```
+
+The bridge includes its `machine_id`, `ip` and `port` in every push (the `ip` is
+auto-detected if you omit `--ip`). On startup it prints the exact identity it is
+reporting — use those values when configuring the device binding below.
+
+#### Routing a bridge to a specific device
+
+So that a reading lands on the **right device** (not just "the dashboard"), each
+device carries a *bridge binding*:
+
+1. In the dashboard, drill down to the **machine** in the asset hierarchy and
+   click the link/🔗 icon on its card → **Bridge Binding**.
+2. Enter the **Machine ID**, **IP** and **Port** exactly as the bridge reports
+   them (the dialog also lists any *incoming* bridges you can click to autofill).
+3. Save. The card shows `BRIDGE BOUND`, turning to `● BRIDGE LIVE` once data
+   arrives.
+
+The backend matches each pushed reading **strictly** on `machine_id` **and**
+`ip`. Because the bridge reports its own LAN ip in the payload (rather than the
+backend relying on the TCP source address, which a cloud proxy/NAT rewrites),
+matching works the same whether the backend is local or on Render. The detected
+public source IP is recorded too and shown in the binding dialog for reference.
+
+When the selected machine has a binding, the live HMI shows **only that device's**
+data; machines with no binding fall back to the global/simulated stream.
 
 ## Performance Optimizations
 
