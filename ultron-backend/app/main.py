@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import orjson
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -22,6 +22,8 @@ from fastapi.responses import JSONResponse, Response
 from app.config import settings
 from app import database as db
 from app.asset_hierarchy import router as asset_router, init_asset_db
+from app import device_registry
+from app.device_registry import router as device_router, init_device_db
 from app.discovery.mdns_advertiser import MDNSAdvertiser
 from app.logger import logger
 from app.models import (
@@ -76,11 +78,15 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
     from app.models import SensorReading, SystemStatus
 
     status = sensor_manager._derive_status(pressure, temperature)
+    machine_id = bridge_info.machine_id
+    device_id = bridge_info.device_node_id
     reading = SensorReading(
         timestamp=datetime.now(timezone.utc),
         pressure=pressure,
         temperature=temperature,
         status=status,
+        machine_id=machine_id,
+        device_id=device_id,
     )
     sensor_manager._latest = reading
     await ws_manager.broadcast(reading)
@@ -90,7 +96,7 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
     if settings.db.enabled:
         _reading_buffer.append({
             "timestamp":   reading.timestamp.isoformat(),
-            "machine_id":  settings.machine_id,
+            "machine_id":  machine_id or settings.machine_id,
             "pressure":    reading.pressure,
             "temperature": reading.temperature,
             "status":      reading.status.value,
@@ -194,6 +200,8 @@ async def lifespan(app: FastAPI):
             import sqlite3
             asset_conn = sqlite3.connect(settings.db.path, check_same_thread=False)
             init_asset_db(asset_conn)
+            device_conn = sqlite3.connect(settings.db.path, check_same_thread=False)
+            init_device_db(device_conn)
         except Exception as exc:
             logger.error("DB init failed — persistence disabled: %s", exc)
 
@@ -284,6 +292,15 @@ app.add_middleware(
 )
 
 app.include_router(asset_router)
+app.include_router(device_router)
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """Best-effort source IP, honouring proxy headers (Render/NGINX set XFF)."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else None
 
 
 # ---------------------------------------------------------------------------
@@ -534,7 +551,9 @@ async def register_bridge(request: BridgeRegisterRequest) -> BridgeRegisterRespo
     tags=["Bridges"],
     summary="Receive live data pushed by a bridge (push model)",
 )
-async def ingest_bridge_data(request: BridgeIngestRequest) -> BridgeIngestResponse:
+async def ingest_bridge_data(
+    payload: BridgeIngestRequest, request: Request
+) -> BridgeIngestResponse:
     """
     Accept a sensor reading PUSHED by a bridge instead of polling the bridge.
 
@@ -550,13 +569,37 @@ async def ingest_bridge_data(request: BridgeIngestRequest) -> BridgeIngestRespon
     The reading is normalized and broadcast over WebSocket to all dashboards,
     exactly like polled bridge data.
     """
-    raw = request.model_dump()
-    source = request.source or "default"
-    bridge = await bridge_manager.ingest(str(source), raw)
+    raw = payload.model_dump()
+    machine_id = str(
+        payload.machine_id or raw.get("machineId") or payload.source or "default"
+    )
+    reported_ip = str(payload.ip or raw.get("ip") or "")
+    source_ip = _client_ip(request)
+
+    # Strict routing: a binding must match BOTH machine_id AND the reported ip.
+    binding = device_registry.match(machine_id, reported_ip)
+    device_node_id = binding["node_id"] if binding else None
+
+    # Distinct (machine_id, ip) pairs map to distinct bridge entries.
+    source_key = f"{machine_id}@{reported_ip}" if reported_ip else machine_id
+    bridge = await bridge_manager.ingest(
+        source_key, raw, machine_id=machine_id, device_node_id=device_node_id
+    )
+
+    data = bridge.latest_data or {}
+    device_registry.record_incoming(
+        machine_id,
+        reported_ip,
+        source_ip,
+        device_node_id,
+        pressure=data.get("pressure"),
+        temperature=data.get("temperature"),
+    )
+
     return BridgeIngestResponse(
         success=True,
         bridge_id=bridge.id,
-        message="ok",
+        message="matched" if device_node_id else "accepted (no device binding matched)",
     )
 
 

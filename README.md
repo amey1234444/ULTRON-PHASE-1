@@ -253,12 +253,33 @@ works through NAT/firewalls with no port forwarding.
 ```bash
 python ultron_bridge.py --mode dummy \
     --push-url https://ultron-backend-pakd.onrender.com \
-    --source BRIDGE-001
+    --machine-id RAV-01 --ip 192.168.1.50
 ```
 
-No manual registration is needed — the bridge appears automatically under
-**Settings → Bridge Configuration** (labelled `PUSH`) once it starts pushing, and
-its data streams straight to the dashboard.
+The bridge includes its `machine_id`, `ip` and `port` in every push (the `ip` is
+auto-detected if you omit `--ip`). On startup it prints the exact identity it is
+reporting — use those values when configuring the device binding below.
+
+#### Routing a bridge to a specific device
+
+So that a reading lands on the **right device** (not just "the dashboard"), each
+device carries a *bridge binding*:
+
+1. In the dashboard, drill down to the **machine** in the asset hierarchy and
+   click the link/🔗 icon on its card → **Bridge Binding**.
+2. Enter the **Machine ID**, **IP** and **Port** exactly as the bridge reports
+   them (the dialog also lists any *incoming* bridges you can click to autofill).
+3. Save. The card shows `BRIDGE BOUND`, turning to `● BRIDGE LIVE` once data
+   arrives.
+
+The backend matches each pushed reading **strictly** on `machine_id` **and**
+`ip`. Because the bridge reports its own LAN ip in the payload (rather than the
+backend relying on the TCP source address, which a cloud proxy/NAT rewrites),
+matching works the same whether the backend is local or on Render. The detected
+public source IP is recorded too and shown in the binding dialog for reference.
+
+When the selected machine has a binding, the live HMI shows **only that device's**
+data; machines with no binding fall back to the global/simulated stream.
 
 ## Performance Optimizations
 

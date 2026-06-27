@@ -86,7 +86,47 @@ parser.add_argument(
     default="BRIDGE-001",
     help="Stable identifier for this bridge when pushing (default: BRIDGE-001)",
 )
+parser.add_argument(
+    "--machine-id",
+    default=None,
+    help=(
+        "Machine ID this bridge reports when pushing. The backend matches it "
+        "(together with --ip) against the device binding configured in the "
+        "dashboard. Defaults to --source."
+    ),
+)
+parser.add_argument(
+    "--ip",
+    default=None,
+    help=(
+        "IP this bridge reports when pushing (matched against the device "
+        "binding). Defaults to the machine's auto-detected LAN IP. Set this to "
+        "exactly the IP you enter on the dashboard's device binding form."
+    ),
+)
 args, _unknown = parser.parse_known_args()
+
+
+def _detect_local_ip() -> str:
+    """Best-effort LAN IP detection (no traffic actually sent)."""
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+    finally:
+        s.close()
+
+
+# Identity this bridge reports to the backend for device routing.
+PUSH_MACHINE_ID = args.machine_id or args.source
+PUSH_IP = args.ip or _detect_local_ip()
 
 
 # ---------------------------------------------------------------------------
@@ -358,13 +398,21 @@ async def _push_loop() -> None:
 
     ingest_url = args.push_url.rstrip("/") + "/api/bridges/ingest"
     print(f"[PUSH] Pushing readings to {ingest_url} every {args.push_interval}s")
+    print(f"[PUSH] Reporting machine_id={PUSH_MACHINE_ID!r} ip={PUSH_IP!r} port={args.port}")
+    print("[PUSH] Configure a device binding with these exact values on the dashboard.")
 
     fail_count = 0
     async with httpx.AsyncClient(timeout=10.0) as client:
         while True:
             try:
                 data = await get_sensor_data()
-                payload = {"source": args.source, **data}
+                payload = {
+                    "source": args.source,
+                    "machine_id": PUSH_MACHINE_ID,
+                    "ip": PUSH_IP,
+                    "port": args.port,
+                    **data,
+                }
                 resp = await client.post(ingest_url, json=payload)
                 resp.raise_for_status()
                 if fail_count:

@@ -40,6 +40,8 @@ class BridgeInfo:
         self.poll_count: int = 0
         self.error_count: int = 0
         self.latest_data: Optional[dict] = None
+        self.machine_id: Optional[str] = None  # reported by the bridge (push)
+        self.device_node_id: Optional[str] = None  # matched asset node, if any
 
     def to_dict(self) -> dict:
         return {
@@ -53,6 +55,8 @@ class BridgeInfo:
             "pollCount": self.poll_count,
             "errorCount": self.error_count,
             "hasData": self.latest_data is not None,
+            "machineId": self.machine_id,
+            "deviceNodeId": self.device_node_id,
         }
 
 
@@ -180,7 +184,13 @@ class BridgeManager:
         logger.info("Bridge registered: %s (id=%s)", url, bridge.id)
         return bridge
 
-    async def ingest(self, source: str, raw: dict) -> BridgeInfo:
+    async def ingest(
+        self,
+        source: str,
+        raw: dict,
+        machine_id: Optional[str] = None,
+        device_node_id: Optional[str] = None,
+    ) -> BridgeInfo:
         """
         Handle a reading PUSHED by a bridge (push model).
 
@@ -209,6 +219,8 @@ class BridgeManager:
         bridge.last_seen = time.time()
         bridge.poll_count += 1
         bridge.last_error = None
+        bridge.machine_id = machine_id
+        bridge.device_node_id = device_node_id
 
         if self._on_data_callback:
             await self._on_data_callback(

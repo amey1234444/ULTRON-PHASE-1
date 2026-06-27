@@ -24,6 +24,8 @@ class SensorReading(BaseModel):
     pressure: float = Field(..., ge=0.0, description="Pressure in bar")
     temperature: float = Field(..., description="Temperature in °C")
     status: SystemStatus = Field(default=SystemStatus.HEALTHY)
+    machine_id: Optional[str] = Field(default=None, description="Machine ID the reading belongs to (bridge routing)")
+    device_id: Optional[str] = Field(default=None, description="Matched asset node id (bridge routing)")
 
     model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
 
@@ -156,6 +158,18 @@ class BridgeIngestRequest(BaseModel):
     source: Optional[str] = Field(
         default=None,
         description="Stable identifier for this bridge (machine_id, hostname, etc.)",
+    )
+    machine_id: Optional[str] = Field(
+        default=None,
+        description="Machine ID used to route this reading to a device binding",
+    )
+    ip: Optional[str] = Field(
+        default=None,
+        description="Bridge's own (LAN) IP, matched against the device binding",
+    )
+    port: Optional[int] = Field(
+        default=None,
+        description="Bridge's port (informational; stored on the binding)",
     )
     pressure: Optional[float] = None
     temperature: Optional[float] = None

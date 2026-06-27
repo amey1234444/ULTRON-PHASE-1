@@ -12,6 +12,9 @@ import { MonitoringPage }          from '../../pages/MonitoringPage';
 import { PlaceholderPage }         from '../../pages/PlaceholderPage';
 import { AssetSelectionPage }      from '../../pages/AssetSelectionPage';
 import { useAssetHierarchyStore }  from '../../store/assetHierarchyStore';
+import { useDeviceBindingStore }   from '../../store/deviceBindingStore';
+import { useSensorStore }          from '../../store/sensorStore';
+import { useConnectionStore, SIMULATION_CONFIG } from '../../store/connectionStore';
 
 function phaseToView(phase: string): SidebarView {
   if (phase === 'settings')    return 'settings';
@@ -34,6 +37,11 @@ function useIsMobile() {
 export const MainLayout: React.FC = () => {
   const appPhase = useAppStore((s) => s.appPhase);
   const selectedEquipmentTypeId = useAssetHierarchyStore((s) => s.selectedEquipmentTypeId);
+  const selectedMachineId = useAssetHierarchyStore((s) => s.selectedMachineId);
+  const apiBase = useConnectionStore((s) => s.config?.apiBase) ?? SIMULATION_CONFIG.apiBase;
+  const bindings = useDeviceBindingStore((s) => s.bindings);
+  const fetchBindings = useDeviceBindingStore((s) => s.fetchBindings);
+  const setActiveDevice = useSensorStore((s) => s.setActiveDevice);
   const isMobile = useIsMobile();
   const [collapsed, setCollapsed]   = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -44,6 +52,20 @@ export const MainLayout: React.FC = () => {
   }, [appPhase]);
 
   useConnectionManager();
+
+  // Keep device bindings fresh so routing knows each machine's machine_id.
+  useEffect(() => {
+    fetchBindings(apiBase);
+    const id = setInterval(() => fetchBindings(apiBase), 4000);
+    return () => clearInterval(id);
+  }, [apiBase, fetchBindings]);
+
+  // Route the live view to the selected machine's bound device (machine_id).
+  // When the machine has no binding, fall back to the global stream.
+  useEffect(() => {
+    const boundMachineId = selectedMachineId ? bindings[selectedMachineId]?.machine_id ?? null : null;
+    setActiveDevice(boundMachineId);
+  }, [selectedMachineId, bindings, setActiveDevice]);
 
   const handleNavigate = useCallback((view: SidebarView) => {
     setActiveView(view);
