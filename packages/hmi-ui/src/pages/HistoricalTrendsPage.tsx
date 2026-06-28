@@ -168,7 +168,7 @@ export const HistoricalTrendsPage: React.FC = () => {
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-[#0f1419]">
+    <div className="flex flex-col h-full overflow-hidden">
       {/* Sim banner */}
       {isSim && (
         <div className="sim-banner">
