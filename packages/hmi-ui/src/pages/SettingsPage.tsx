@@ -12,6 +12,7 @@ import type { SensorThresholds, HealthThresholds } from '../store/thresholdStore
 interface BridgeEntry {
   id: string;
   url: string;
+  isPush?: boolean;
   status: string;
   lastSeen: number;
   lastError: string | null;
@@ -159,6 +160,12 @@ const BridgeSection: React.FC<BridgeSectionProps> = ({
       <p className="text-2xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
         Register an external bridge (e.g., ultron_bridge.py) to stream real sensor data
         to this dashboard. Enter the bridge URL below (http://IP:PORT, default port 8765).
+        This <b>pull</b> mode requires the backend to reach the bridge over the network.
+      </p>
+      <p className="text-2xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
+        If the backend is hosted in the cloud and the bridge runs on a local/private
+        network, use <b>push</b> mode instead — start the bridge with
+        {' '}<code>--push-url &lt;backend&gt;</code> and it will appear here automatically.
       </p>
 
       <Row label="Bridge URL">
@@ -206,7 +213,8 @@ const BridgeSection: React.FC<BridgeSectionProps> = ({
                   <div className="text-xs font-mono truncate" style={{ color: 'var(--text)' }}>{b.url}</div>
                   <div className="text-2xs mt-0.5 flex gap-3" style={{ color: 'var(--text-3)' }}>
                     <span style={{ color: statusColor(b.status) }}>{b.status.toUpperCase()}</span>
-                    <span>polls: {b.pollCount}</span>
+                    <span style={{ color: 'var(--accent)' }}>{b.isPush ? 'PUSH' : 'PULL'}</span>
+                    <span>{b.isPush ? 'pushes' : 'polls'}: {b.pollCount}</span>
                     {b.errorCount > 0 && <span style={{ color: 'var(--crit)' }}>errors: {b.errorCount}</span>}
                     <span>seen: {ago(b.lastSeen)}</span>
                   </div>
