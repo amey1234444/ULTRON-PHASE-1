@@ -8,16 +8,18 @@ works even when this machine is behind NAT / has no public IP (Colab included).
 ────────────────────────────────────────────────────────────────────────────
 HOW ROUTING WORKS (read this once)
 ────────────────────────────────────────────────────────────────────────────
-On the dashboard, open a Machine card → the 🔗 "Bridge binding" button, and set
-a Machine ID + IP + Port for the device you want this data to appear on.
+On the dashboard, drill down the asset hierarchy to the Equipment Type level
+(e.g. Motor, Pump, Fan, Rotary Airlock Valve). Hover over the equipment type
+card and click the 🔗 "Bridge binding" button. Set a Machine ID + IP + Port.
 
-The backend routes a reading to that device only when BOTH the MACHINE_ID and the
-IP reported below match the binding EXACTLY. The IP is just a label you choose —
-it does NOT have to be Colab's real address (Colab has none that the backend can
-see). Pick any value, put the SAME value in the binding form and in `IP` below.
+The backend routes a reading to that equipment type only when BOTH the MACHINE_ID
+and the IP reported below match the binding EXACTLY. The IP is just a label you
+choose — it does NOT have to be Colab's real address (Colab has none that the
+backend can see). Pick any value, put the SAME value in the binding form and in
+`IP` below.
 
-Example binding on the dashboard:   Machine ID = RAV-01,  IP = 10.0.0.5,  Port = 8765
-Then set below:                     MACHINE_ID = "RAV-01", IP = "10.0.0.5", PORT = 8765
+Example binding on the dashboard:   Machine ID = TM-01,  IP = 10.11.11.5,  Port = 1111
+Then set below:                     MACHINE_ID = "TM-01", IP = "10.11.11.5", PORT = 1111
 
 ────────────────────────────────────────────────────────────────────────────
 USAGE
@@ -28,7 +30,7 @@ In Google Colab — paste this whole file into a cell, edit the CONFIG block, ru
 As a script:
   python ultron_colab_bridge.py \
       --backend https://ultron-backend-pakd.onrender.com \
-      --machine-id RAV-01 --ip 10.0.0.5 --port 8765 --interval 1.0
+      --machine-id TM-01 --ip 10.11.11.5 --port 1111 --interval 1.0
 """
 
 import argparse
@@ -44,10 +46,10 @@ import requests  # pre-installed in Colab; otherwise: pip install requests
 # CONFIG — edit these in Colab (or override with command-line flags)
 # ════════════════════════════════════════════════════════════════════════════
 BACKEND_URL = "https://ultron-backend-pakd.onrender.com"  # your Render backend
-MACHINE_ID  = "RAV-01"      # must match the device binding's Machine ID
-IP          = "10.0.0.5"    # must match the device binding's IP (any label you pick)
-PORT        = 8765          # must match the device binding's Port
-INTERVAL    = 1.0           # seconds between pushes
+MACHINE_ID  = "TM-01"      # must match the equipment type binding's Machine ID
+IP          = "10.11.11.5"  # must match the equipment type binding's IP (any label you pick)
+PORT        = 1111          # must match the equipment type binding's Port
+INTERVAL    = 0.5           # seconds between pushes
 # ════════════════════════════════════════════════════════════════════════════
 
 

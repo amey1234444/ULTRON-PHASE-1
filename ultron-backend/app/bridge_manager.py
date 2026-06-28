@@ -35,6 +35,8 @@ class BridgeInfo:
         self.poll_count: int = 0
         self.error_count: int = 0
         self.latest_data: Optional[dict] = None
+        self.machine_id: Optional[str] = None
+        self.device_node_id: Optional[str] = None
 
     def to_dict(self) -> dict:
         return {
@@ -211,6 +213,8 @@ class BridgeManager:
         bridge.last_seen = time.time()
         bridge.poll_count += 1
         bridge.last_error = None
+        bridge.machine_id = machine_id
+        bridge.device_node_id = device_node_id
         if device_node_id:
             bridge.equipment_type_id = device_node_id
 
