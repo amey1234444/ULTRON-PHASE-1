@@ -12,6 +12,8 @@ import {
   type EquipmentTypeId,
 } from '../store/assetHierarchyStore';
 import { useConnectionStore, SIMULATION_CONFIG } from '../store/connectionStore';
+import { useDeviceBindingStore } from '../store/deviceBindingStore';
+import { DeviceBindingModal } from '../components/DeviceBindingModal';
 
 const LEVEL_TITLES: Record<AssetLevel, string> = {
   company: 'Select Company',
@@ -143,12 +145,14 @@ function ConfirmModal({ open, message, onConfirm, onClose }: {
 // Option Card with Edit/Delete buttons
 // ---------------------------------------------------------------------------
 
-function OptionCard({ node, selected, onClick, onEdit, onDelete }: {
+function OptionCard({ node, selected, onClick, onEdit, onDelete, onBind, bindStatus }: {
   node: AssetNode;
   selected?: boolean;
   onClick: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  onBind?: () => void;
+  bindStatus?: 'none' | 'bound' | 'live';
 }) {
   return (
     <div
@@ -176,9 +180,28 @@ function OptionCard({ node, selected, onClick, onEdit, onDelete }: {
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 18l6-6-6-6" />
           </svg>
         </div>
+        {onBind && bindStatus && bindStatus !== 'none' && (
+          <div className="mt-2 inline-flex items-center gap-1 text-2xs font-mono px-1.5 py-0.5 rounded"
+            style={{
+              background: 'var(--panel-alt)',
+              color: bindStatus === 'live' ? 'var(--ok, #22c55e)' : 'var(--text-3)',
+            }}>
+            {bindStatus === 'live' ? '● BRIDGE LIVE' : '○ BRIDGE BOUND'}
+          </div>
+        )}
       </button>
       {/* Action buttons — visible on hover */}
       <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {onBind && (
+          <button onClick={(e) => { e.stopPropagation(); onBind(); }}
+            className="p-1.5 rounded transition-colors" title="Bridge binding (IP / Machine ID)"
+            style={{ background: 'var(--panel-alt)', color: 'var(--accent)' }}>
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={2}>
+              <path d="M13.5 6.5l4 4M10 13l-1.5 1.5a3 3 0 01-4.243-4.243L7 7.5" />
+              <path d="M14 11l1.5-1.5a3 3 0 014.243 4.243L17 16.5" />
+            </svg>
+          </button>
+        )}
         <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
           className="p-1.5 rounded transition-colors" title="Edit"
           style={{ background: 'var(--panel-alt)', color: 'var(--accent)' }}>
@@ -217,6 +240,8 @@ export const AssetSelectionPage: React.FC = () => {
   const selectedMachineId = useAssetHierarchyStore((s) => s.selectedMachineId);
   const selectedEquipmentId = useAssetHierarchyStore((s) => s.selectedEquipmentId);
   const selectedEquipmentTypeId = useAssetHierarchyStore((s) => s.selectedEquipmentTypeId);
+  const bindings = useDeviceBindingStore((s) => s.bindings);
+  const fetchBindings = useDeviceBindingStore((s) => s.fetchBindings);
   const selectCompany = useAssetHierarchyStore((s) => s.selectCompany);
   const selectPlant = useAssetHierarchyStore((s) => s.selectPlant);
   const selectArea = useAssetHierarchyStore((s) => s.selectArea);
@@ -224,8 +249,13 @@ export const AssetSelectionPage: React.FC = () => {
   const selectEquipment = useAssetHierarchyStore((s) => s.selectEquipment);
   const selectEquipmentType = useAssetHierarchyStore((s) => s.selectEquipmentType);
 
-  // Fetch tree from API on mount
+  // Fetch tree + device bindings from API on mount
   useEffect(() => { fetchTree(apiBase); }, [apiBase, fetchTree]);
+  useEffect(() => {
+    fetchBindings(apiBase);
+    const id = setInterval(() => fetchBindings(apiBase), 4000);
+    return () => clearInterval(id);
+  }, [apiBase, fetchBindings]);
 
   const companies = getCompanies();
   const company = getSelectedCompany(selectedCompanyId);
@@ -278,6 +308,7 @@ export const AssetSelectionPage: React.FC = () => {
   const [showAddModal, setShowAddModal] = useState(false);
   const [editTarget, setEditTarget] = useState<AssetNode | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<AssetNode | null>(null);
+  const [bindTarget, setBindTarget] = useState<AssetNode | null>(null);
   const [busy, setBusy] = useState(false);
 
   const handleAdd = useCallback(async (label: string, code: string) => {
@@ -353,16 +384,22 @@ export const AssetSelectionPage: React.FC = () => {
               </div>
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {nodes.map((node) => (
-                <OptionCard
-                  key={node.id}
-                  node={node}
-                  selected={level === 'equipmentType' && node.id === selectedEquipmentTypeId}
-                  onClick={() => selectNode(node.id)}
-                  onEdit={() => setEditTarget(node)}
-                  onDelete={() => setDeleteTarget(node)}
-                />
-              ))}
+              {nodes.map((node) => {
+                const binding = level === 'machine' ? bindings[node.id] : undefined;
+                const bindStatus = !binding ? 'none' : binding.connected ? 'live' : 'bound';
+                return (
+                  <OptionCard
+                    key={node.id}
+                    node={node}
+                    selected={level === 'equipmentType' && node.id === selectedEquipmentTypeId}
+                    onClick={() => selectNode(node.id)}
+                    onEdit={() => setEditTarget(node)}
+                    onDelete={() => setDeleteTarget(node)}
+                    onBind={level === 'machine' ? () => setBindTarget(node) : undefined}
+                    bindStatus={bindStatus}
+                  />
+                );
+              })}
             </div>
           </div>
         </div>
@@ -410,6 +447,18 @@ export const AssetSelectionPage: React.FC = () => {
         onConfirm={handleDelete}
         onClose={() => setDeleteTarget(null)}
       />
+
+      {/* Bridge Binding (per-device IP / Machine ID) */}
+      {bindTarget && (
+        <DeviceBindingModal
+          open={!!bindTarget}
+          nodeId={bindTarget.id}
+          nodeLabel={bindTarget.label}
+          nodeCode={bindTarget.code}
+          apiBase={apiBase}
+          onClose={() => setBindTarget(null)}
+        />
+      )}
     </div>
   );
 };

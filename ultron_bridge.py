@@ -27,6 +27,7 @@ import math
 import random
 import re
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -65,14 +66,87 @@ parser.add_argument(
     default="http://192.168.10.50",
     help="STM32 U5 HTTP page URL for hardware mode (default: http://192.168.10.50)",
 )
+parser.add_argument(
+    "--push-url",
+    default=None,
+    help=(
+        "If set, PUSH readings to this ULTRON backend's /api/bridges/ingest "
+        "endpoint instead of waiting to be polled (e.g. https://my-backend.onrender.com). "
+        "Use this when the backend is in the cloud and this bridge is behind NAT."
+    ),
+)
+parser.add_argument(
+    "--push-interval",
+    type=float,
+    default=1.0,
+    help="Seconds between pushes when --push-url is set (default: 1.0)",
+)
+parser.add_argument(
+    "--source",
+    default="BRIDGE-001",
+    help="Stable identifier for this bridge when pushing (default: BRIDGE-001)",
+)
+parser.add_argument(
+    "--machine-id",
+    default=None,
+    help=(
+        "Machine ID this bridge reports when pushing. The backend matches it "
+        "(together with --ip) against the device binding configured in the "
+        "dashboard. Defaults to --source."
+    ),
+)
+parser.add_argument(
+    "--ip",
+    default=None,
+    help=(
+        "IP this bridge reports when pushing (matched against the device "
+        "binding). Defaults to the machine's auto-detected LAN IP. Set this to "
+        "exactly the IP you enter on the dashboard's device binding form."
+    ),
+)
 args, _unknown = parser.parse_known_args()
+
+
+def _detect_local_ip() -> str:
+    """Best-effort LAN IP detection (no traffic actually sent)."""
+    import socket
+
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+    finally:
+        s.close()
+
+
+# Identity this bridge reports to the backend for device routing.
+PUSH_MACHINE_ID = args.machine_id or args.source
+PUSH_IP = args.ip or _detect_local_ip()
 
 
 # ---------------------------------------------------------------------------
 # FastAPI Application
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="ULTRON Bridge", version="1.0.0")
+@asynccontextmanager
+async def lifespan(app: "FastAPI"):
+    """Start the push loop on startup when --push-url is configured."""
+    push_task = None
+    if args.push_url:
+        push_task = asyncio.create_task(_push_loop())
+    try:
+        yield
+    finally:
+        if push_task is not None:
+            push_task.cancel()
+
+
+app = FastAPI(title="ULTRON Bridge", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -313,6 +387,45 @@ async def health_check():
 
 
 # ---------------------------------------------------------------------------
+# Push Loop — POST readings to a cloud backend (works behind NAT)
+# ---------------------------------------------------------------------------
+
+async def _push_loop() -> None:
+    """Continuously POST sensor readings to the backend's ingest endpoint."""
+    if httpx is None:
+        print("ERROR: --push-url requires httpx. Install it with: pip install httpx")
+        return
+
+    ingest_url = args.push_url.rstrip("/") + "/api/bridges/ingest"
+    print(f"[PUSH] Pushing readings to {ingest_url} every {args.push_interval}s")
+    print(f"[PUSH] Reporting machine_id={PUSH_MACHINE_ID!r} ip={PUSH_IP!r} port={args.port}")
+    print("[PUSH] Configure a device binding with these exact values on the dashboard.")
+
+    fail_count = 0
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        while True:
+            try:
+                data = await get_sensor_data()
+                payload = {
+                    "source": args.source,
+                    "machine_id": PUSH_MACHINE_ID,
+                    "ip": PUSH_IP,
+                    "port": args.port,
+                    **data,
+                }
+                resp = await client.post(ingest_url, json=payload)
+                resp.raise_for_status()
+                if fail_count:
+                    print(f"[PUSH] Recovered — backend reachable again ({ingest_url})")
+                    fail_count = 0
+            except Exception as exc:
+                fail_count += 1
+                if fail_count % 10 == 1:
+                    print(f"[PUSH] Failed to reach backend: {exc}")
+            await asyncio.sleep(args.push_interval)
+
+
+# ---------------------------------------------------------------------------
 # WebSocket Endpoint
 # ---------------------------------------------------------------------------
 
@@ -358,6 +471,9 @@ if __name__ == "__main__":
     print(f"  Binding:  {args.host}:{args.port}")
     if args.mode == "hardware":
         print(f"  STM32:    {args.stm32_url}")
+    if args.push_url:
+        print(f"  Push to:  {args.push_url.rstrip('/')}/api/bridges/ingest")
+        print(f"  Source:   {args.source}")
     print(f"  Endpoints:")
     print(f"    GET  /api/device/identity")
     print(f"    GET  /api/live")
@@ -366,8 +482,12 @@ if __name__ == "__main__":
     print(f"    WS   /ws")
     print("=" * 60)
     print()
-    print(f"Register this bridge in ULTRON dashboard Settings:")
-    print(f"  http://<your-ip>:{args.port}")
+    if args.push_url:
+        print("Push mode is ON — data is sent to the backend automatically.")
+        print("No manual registration needed; the bridge appears in Settings.")
+    else:
+        print(f"Register this bridge in ULTRON dashboard Settings (pull mode):")
+        print(f"  http://<your-ip>:{args.port}")
     print()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
