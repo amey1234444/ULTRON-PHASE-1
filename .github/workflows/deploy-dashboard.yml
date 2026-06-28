@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - devin/1781713168-deploy-live
     paths:
       - 'packages/hmi-ui/**'
       - 'ultron-dashboard/**'
