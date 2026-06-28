@@ -184,6 +184,45 @@ class BridgeManager:
         async with self._lock:
             return [b.to_dict() for b in self._bridges.values()]
 
+    async def ingest(
+        self,
+        source_key: str,
+        raw: dict,
+        machine_id: str = "",
+        device_node_id: Optional[str] = None,
+    ) -> BridgeInfo:
+        """Accept a pushed reading (push model). Creates/reuses a BridgeInfo for the source."""
+        async with self._lock:
+            # Reuse existing push-bridge or create one keyed by source_key
+            bridge = None
+            for b in self._bridges.values():
+                if b.url == f"push://{source_key}":
+                    bridge = b
+                    break
+            if bridge is None:
+                bridge = BridgeInfo(f"push://{source_key}", device_node_id or "")
+                bridge.url = f"push://{source_key}"
+                self._bridges[bridge.id] = bridge
+                logger.info("Push bridge created: %s (id=%s)", source_key, bridge.id)
+
+        normalized = _normalize_bridge_data(raw)
+        bridge.latest_data = normalized
+        bridge.status = "connected"
+        bridge.last_seen = time.time()
+        bridge.poll_count += 1
+        bridge.last_error = None
+        if device_node_id:
+            bridge.equipment_type_id = device_node_id
+
+        if self._on_data_callback:
+            await self._on_data_callback(
+                normalized["pressure"],
+                normalized["temperature"],
+                bridge,
+            )
+
+        return bridge
+
     def get_bridge_for_equipment(self, equipment_type_id: str) -> Optional[BridgeInfo]:
         """Get the bridge for a specific equipment type."""
         for b in self._bridges.values():
