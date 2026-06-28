@@ -385,7 +385,7 @@ export const AssetSelectionPage: React.FC = () => {
             )}
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {nodes.map((node) => {
-                const binding = level === 'machine' ? bindings[node.id] : undefined;
+                const binding = level === 'equipmentType' ? bindings[node.id] : undefined;
                 const bindStatus = !binding ? 'none' : binding.connected ? 'live' : 'bound';
                 return (
                   <OptionCard
@@ -395,7 +395,7 @@ export const AssetSelectionPage: React.FC = () => {
                     onClick={() => selectNode(node.id)}
                     onEdit={() => setEditTarget(node)}
                     onDelete={() => setDeleteTarget(node)}
-                    onBind={level === 'machine' ? () => setBindTarget(node) : undefined}
+                    onBind={level === 'equipmentType' ? () => setBindTarget(node) : undefined}
                     bindStatus={bindStatus}
                   />
                 );
