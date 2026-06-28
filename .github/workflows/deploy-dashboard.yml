@@ -12,7 +12,7 @@ on:
       - '.github/workflows/deploy-dashboard.yml'
 
 env:
-  VITE_API_BASE: https://ultron-backend-pakd.onrender.com
+  VITE_API_BASE: https://ultron-backend-2.onrender.com
 
 jobs:
   deploy:
