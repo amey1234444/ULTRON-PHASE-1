@@ -1,18 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useAppStore }       from '../store/appStore';
-import { useSettings }       from '../hooks/useSettings';
-import { useBackend }        from '../hooks/useBackend';
-import { useHealth, useSetMode } from '../hooks/useDeviceInfo';
-import { useThresholdStore } from '../store/thresholdStore';
-import { useConnectionStore, deviceInfoToConfig } from '../store/connectionStore';
-import type { ConnectionProtocol } from '../store/connectionStore';
-import { usePlatform } from '../platform/PlatformContext';
-import type { SensorThresholds, HealthThresholds } from '../store/thresholdStore';
+import { useAssetHierarchyStore } from '../store/assetHierarchyStore';
+import { useConnectionStore }     from '../store/connectionStore';
+import { useSensorStore }         from '../store/sensorStore';
 
 interface BridgeEntry {
   id: string;
   url: string;
-  isPush?: boolean;
+  equipmentTypeId: string;
   status: string;
   lastSeen: number;
   lastError: string | null;
@@ -22,72 +16,41 @@ interface BridgeEntry {
   hasData: boolean;
 }
 
-interface RowProps { label: string; children: React.ReactNode }
-const Row: React.FC<RowProps> = ({ label, children }) => (
-  <div className="flex items-center justify-between py-2.5 border-b last:border-0"
-    style={{ borderColor: 'var(--border)' }}>
-    <span className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>{label}</span>
-    <div className="text-sm" style={{ color: 'var(--text)' }}>{children}</div>
-  </div>
-);
+interface Props { onBack?: () => void }
 
-interface SectionProps { title: string; children: React.ReactNode }
-const Section: React.FC<SectionProps> = ({ title, children }) => (
-  <div className="scada-panel mb-4">
-    <div className="scada-panel-header">
-      <span className="scada-panel-title">{title}</span>
-    </div>
-    <div className="p-3">{children}</div>
-  </div>
-);
+export const SettingsPage: React.FC<Props> = ({ onBack }) => {
+  const config = useConnectionStore((s) => s.config);
+  const apiBase = config?.apiBase ?? import.meta.env.VITE_API_BASE ?? '';
 
-interface ToggleProps { checked: boolean; onChange: (v: boolean) => void }
-const Toggle: React.FC<ToggleProps> = ({ checked, onChange }) => (
-  <button
-    onClick={() => onChange(!checked)}
-    className="relative w-9 h-5 rounded-full transition-colors"
-    style={{ background: checked ? 'var(--accent)' : 'var(--border-hi)' }}
-  >
-    <span
-      className="absolute top-0.5 w-4 h-4 rounded-full transition-all"
-      style={{ background: 'white', left: checked ? '18px' : '2px' }}
-    />
-  </button>
-);
+  const tree = useAssetHierarchyStore((s) => s.tree);
+  const fetchTree = useAssetHierarchyStore((s) => s.fetchTree);
+  const selectedEquipmentTypeId = useAssetHierarchyStore((s) => s.selectedEquipmentTypeId);
 
-const inputClass = {
-  background: 'var(--panel-alt)',
-  border: '1px solid var(--border)',
-  color: 'var(--text)',
-  borderRadius: '2px',
-  padding: '2px 8px',
-  fontFamily: '"JetBrains Mono", monospace',
-  fontSize: '0.8125rem',
-  outline: 'none',
-} as React.CSSProperties;
+  const [bridges, setBridges] = useState<BridgeEntry[]>([]);
+  const [bridgeUrl, setBridgeUrl] = useState('');
+  const [selectedEquip, setSelectedEquip] = useState(selectedEquipmentTypeId ?? '');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-// ---------------------------------------------------------------------------
-// Bridge Configuration section (extracted for clarity)
-// ---------------------------------------------------------------------------
-interface BridgeSectionProps {
-  apiBase: string;
-  bridgeUrl: string;
-  setBridgeUrl: (v: string) => void;
-  bridges: BridgeEntry[];
-  setBridges: (v: BridgeEntry[]) => void;
-  bridgeMsg: { text: string; ok: boolean } | null;
-  setBridgeMsg: (v: { text: string; ok: boolean } | null) => void;
-  registering: boolean;
-  setRegistering: (v: boolean) => void;
-  bridgePollRef: React.MutableRefObject<ReturnType<typeof setInterval> | null>;
-  inputClass: React.CSSProperties;
-}
+  // Collect all equipment types from tree
+  const equipmentTypes: { id: string; label: string; bridgeUrl: string; path: string }[] = [];
+  function collectEquipTypes(nodes: typeof tree, pathParts: string[] = []) {
+    for (const n of nodes) {
+      if (n.level === 'equipmentType') {
+        equipmentTypes.push({
+          id: n.id,
+          label: n.label,
+          bridgeUrl: n.bridge_url ?? '',
+          path: [...pathParts, n.label].join(' > '),
+        });
+      }
+      if (n.children) collectEquipTypes(n.children, [...pathParts, n.label]);
+    }
+  }
+  collectEquipTypes(tree);
 
-const BridgeSection: React.FC<BridgeSectionProps> = ({
-  apiBase, bridgeUrl, setBridgeUrl, bridges, setBridges,
-  bridgeMsg, setBridgeMsg, registering, setRegistering,
-  bridgePollRef, inputClass: ic,
-}) => {
+  // Fetch bridge list
   const fetchBridges = useCallback(async () => {
     if (!apiBase) return;
     try {
@@ -97,54 +60,78 @@ const BridgeSection: React.FC<BridgeSectionProps> = ({
         setBridges(body.bridges ?? []);
       }
     } catch { /* silent */ }
-  }, [apiBase, setBridges]);
+  }, [apiBase]);
 
-  // Poll bridge list every 3 seconds while settings page is open
   useEffect(() => {
     void fetchBridges();
-    bridgePollRef.current = setInterval(() => { void fetchBridges(); }, 3000);
-    return () => { if (bridgePollRef.current) clearInterval(bridgePollRef.current); };
-  }, [fetchBridges, bridgePollRef]);
+    pollRef.current = setInterval(() => { void fetchBridges(); }, 3000);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [fetchBridges]);
 
-  const handleRegister = async () => {
-    let url = bridgeUrl.trim();
-    if (!url) { setBridgeMsg({ text: 'Enter a bridge URL', ok: false }); return; }
-    if (!url.startsWith('http')) url = 'http://' + url;
-    setRegistering(true);
-    setBridgeMsg(null);
+  useEffect(() => {
+    if (selectedEquipmentTypeId) setSelectedEquip(selectedEquipmentTypeId);
+  }, [selectedEquipmentTypeId]);
+
+  // Load bridge URL from selected equipment type
+  useEffect(() => {
+    const equip = equipmentTypes.find((e) => e.id === selectedEquip);
+    if (equip) setBridgeUrl(equip.bridgeUrl);
+  }, [selectedEquip]);
+
+  const handleSaveBridge = async () => {
+    if (!selectedEquip) { setMessage({ text: 'Select an equipment type', ok: false }); return; }
+    const url = bridgeUrl.trim();
+    setSaving(true);
+    setMessage(null);
     try {
-      const res = await fetch(`${apiBase}/api/bridges/register`, {
-        method: 'POST',
+      // Save bridge URL to asset hierarchy
+      const res = await fetch(`${apiBase}/api/assets/${selectedEquip}/bridge`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ bridge_url: url }),
       });
-      const body = await res.json();
-      if (res.ok && body.success) {
-        setBridgeMsg({ text: body.message ?? 'Bridge registered', ok: true });
-        setBridgeUrl('');
-        void fetchBridges();
-      } else {
-        setBridgeMsg({ text: body.message ?? 'Registration failed', ok: false });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // Also register with bridge manager if URL is provided
+      if (url) {
+        await fetch(`${apiBase}/api/bridges/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url.startsWith('http') ? url : `http://${url}`, equipment_type_id: selectedEquip }),
+        });
       }
+
+      setMessage({ text: url ? 'Bridge configured and polling started' : 'Bridge URL removed', ok: true });
+      await fetchTree(apiBase);
+      void fetchBridges();
     } catch (err) {
-      setBridgeMsg({ text: err instanceof Error ? err.message : 'Request failed', ok: false });
+      setMessage({ text: err instanceof Error ? err.message : 'Failed to save', ok: false });
     } finally {
-      setRegistering(false);
-      setTimeout(() => setBridgeMsg(null), 6000);
+      setSaving(false);
+      setTimeout(() => setMessage(null), 5000);
     }
   };
 
-  const handleUnregister = async (id: string) => {
+  const handleRemoveBridge = async (equipId: string) => {
     try {
-      await fetch(`${apiBase}/api/bridges/${id}`, { method: 'DELETE' });
+      await fetch(`${apiBase}/api/assets/${equipId}/bridge`, { method: 'DELETE' });
+      await fetchTree(apiBase);
+      void fetchBridges();
+      if (equipId === selectedEquip) setBridgeUrl('');
+    } catch { /* silent */ }
+  };
+
+  const handleUnregisterBridge = async (bridgeId: string) => {
+    try {
+      await fetch(`${apiBase}/api/bridges/${bridgeId}`, { method: 'DELETE' });
       void fetchBridges();
     } catch { /* silent */ }
   };
 
   const statusColor = (s: string) => {
-    if (s === 'connected') return 'var(--ok)';
-    if (s === 'error') return 'var(--crit)';
-    return 'var(--warn)';
+    if (s === 'connected') return 'text-green-400';
+    if (s === 'error') return 'text-red-400';
+    return 'text-yellow-400';
   };
 
   const ago = (ts: number) => {
@@ -156,462 +143,164 @@ const BridgeSection: React.FC<BridgeSectionProps> = ({
   };
 
   return (
-    <Section title="BRIDGE CONFIGURATION">
-      <p className="text-2xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
-        Register an external bridge (e.g., ultron_bridge.py) to stream real sensor data
-        to this dashboard. Enter the bridge URL below (http://IP:PORT, default port 8765).
-        This <b>pull</b> mode requires the backend to reach the bridge over the network.
-      </p>
-      <p className="text-2xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
-        If the backend is hosted in the cloud and the bridge runs on a local/private
-        network, use <b>push</b> mode instead — start the bridge with
-        {' '}<code>--push-url &lt;backend&gt;</code> and it will appear here automatically.
-      </p>
+    <div className="flex flex-col h-full bg-[#0f1419] overflow-auto">
+      <div className="max-w-4xl w-full mx-auto p-4 sm:p-6 space-y-6">
 
-      <Row label="Bridge URL">
-        <input
-          type="text"
-          value={bridgeUrl}
-          onChange={(e) => setBridgeUrl(e.target.value)}
-          placeholder="http://192.168.1.100:8765"
-          onKeyDown={(e) => { if (e.key === 'Enter') void handleRegister(); }}
-          style={{ ...ic, width: 220 }}
-        />
-      </Row>
-
-      {bridgeMsg && (
-        <div className="rounded px-3 py-2 text-xs mt-3"
-          style={{
-            background: bridgeMsg.ok ? 'var(--ok-dim, rgba(32,208,104,0.08))' : 'var(--warn-dim)',
-            border: `1px solid ${bridgeMsg.ok ? 'var(--ok)' : 'var(--warn)'}`,
-            color: bridgeMsg.ok ? 'var(--ok)' : 'var(--warn)',
-          }}>
-          {bridgeMsg.text}
-        </div>
-      )}
-
-      <button
-        onClick={() => { void handleRegister(); }}
-        disabled={registering || !bridgeUrl.trim()}
-        className="w-full mt-3 rounded px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
-        style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
-      >
-        {registering ? 'Registering...' : 'Register Bridge'}
-      </button>
-
-      {bridges.length > 0 && (
-        <div className="mt-4">
-          <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>
-            REGISTERED BRIDGES
+        {/* Equipment Bridge Configuration */}
+        <section className="bg-[#1a1f2e] rounded-lg border border-gray-700/50 overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-700/50">
+            <h2 className="text-sm font-bold tracking-wider text-white uppercase">Bridge Configuration</h2>
+            <p className="text-xs text-gray-400 mt-1">
+              Configure bridge IP:port for each equipment type. The backend will poll the bridge&apos;s
+              <code className="text-green-400 mx-1">/api/live</code> endpoint every 1s and display
+              data for the selected equipment.
+            </p>
           </div>
-          <div className="space-y-2">
-            {bridges.map((b) => (
-              <div key={b.id}
-                className="flex items-center justify-between rounded px-3 py-2"
-                style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)' }}>
-                <div className="flex-1 min-w-0 mr-2">
-                  <div className="text-xs font-mono truncate" style={{ color: 'var(--text)' }}>{b.url}</div>
-                  <div className="text-2xs mt-0.5 flex gap-3" style={{ color: 'var(--text-3)' }}>
-                    <span style={{ color: statusColor(b.status) }}>{b.status.toUpperCase()}</span>
-                    <span style={{ color: 'var(--accent)' }}>{b.isPush ? 'PUSH' : 'PULL'}</span>
-                    <span>{b.isPush ? 'pushes' : 'polls'}: {b.pollCount}</span>
-                    {b.errorCount > 0 && <span style={{ color: 'var(--crit)' }}>errors: {b.errorCount}</span>}
-                    <span>seen: {ago(b.lastSeen)}</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => { void handleUnregister(b.id); }}
-                  className="text-2xs px-2 py-1 rounded font-semibold"
-                  style={{ background: 'var(--crit-dim)', color: 'var(--crit)', border: '1px solid var(--crit)' }}
+
+          <div className="p-5 space-y-4">
+            {/* Equipment Type Selector */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="flex-1">
+                <label className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-1 block">
+                  Equipment Type
+                </label>
+                <select
+                  value={selectedEquip}
+                  onChange={(e) => setSelectedEquip(e.target.value)}
+                  className="w-full bg-[#0f1419] border border-gray-600 text-white text-sm rounded px-3 py-2 outline-none focus:border-green-400"
                 >
-                  Remove
+                  <option value="">Select equipment type...</option>
+                  {equipmentTypes.map((et) => (
+                    <option key={et.id} value={et.id}>
+                      {et.label} {et.bridgeUrl ? `(${et.bridgeUrl})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Bridge URL Input */}
+            <div>
+              <label className="text-[10px] font-semibold tracking-widest text-gray-400 uppercase mb-1 block">
+                Bridge URL
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={bridgeUrl}
+                  onChange={(e) => setBridgeUrl(e.target.value)}
+                  placeholder="http://192.168.1.100:8765"
+                  onKeyDown={(e) => { if (e.key === 'Enter') void handleSaveBridge(); }}
+                  className="flex-1 bg-[#0f1419] border border-gray-600 text-white text-sm rounded px-3 py-2 font-mono outline-none focus:border-green-400 placeholder-gray-500"
+                />
+                <button
+                  onClick={() => { void handleSaveBridge(); }}
+                  disabled={saving || !selectedEquip}
+                  className="px-4 py-2 bg-green-600 hover:bg-green-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-semibold rounded transition-colors"
+                >
+                  {saving ? 'Saving...' : 'Save'}
                 </button>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            </div>
 
-      {bridges.length === 0 && (
-        <div className="mt-4 text-2xs text-center py-4" style={{ color: 'var(--text-3)' }}>
-          No bridges registered. Data comes from the built-in simulator.
-        </div>
-      )}
-    </Section>
-  );
-};
-
-
-// ---------------------------------------------------------------------------
-// Main Settings Page
-// ---------------------------------------------------------------------------
-interface Props { onBack?: () => void }
-
-export const SettingsPage: React.FC<Props> = ({ onBack }) => {
-  const platform      = usePlatform();
-  const goBack        = useAppStore((s) => s.goBack);
-  const appVersion    = useAppStore((s) => s.appVersion);
-  const { settings, loading, update } = useSettings();
-  const { status: backendStatus, startAsync, stop } = useBackend();
-  const { data: health }                            = useHealth();
-  const setMode                                     = useSetMode();
-  const setConfig     = useConnectionStore((s) => s.setConfig);
-  const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
-  const [modeMsg, setModeMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  const [ipDraft, setIpDraft] = useState('');
-  const [connectMsg, setConnectMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  const [connecting, setConnecting] = useState(false);
-
-  // Bridge management state
-  const [bridgeUrl, setBridgeUrl]       = useState('');
-  const [bridges, setBridges]           = useState<BridgeEntry[]>([]);
-  const [bridgeMsg, setBridgeMsg]       = useState<{ text: string; ok: boolean } | null>(null);
-  const [registering, setRegistering]   = useState(false);
-  const bridgePollRef                   = useRef<ReturnType<typeof setInterval> | null>(null);
-  const config = useConnectionStore((s) => s.config);
-  const bridgeApiBase = config?.apiBase ?? import.meta.env.VITE_API_BASE ?? '';
-
-  useEffect(() => {
-    if (settings && !ipDraft) setIpDraft(settings.last_device_ip ?? '');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settings?.last_device_ip]);
-
-  const pt            = useThresholdStore((s) => s.pressure);
-  const tt            = useThresholdStore((s) => s.temperature);
-  const ht            = useThresholdStore((s) => s.health);
-  const setPressure    = useThresholdStore((s) => s.setPressure);
-  const setTemperature = useThresholdStore((s) => s.setTemperature);
-  const setHealth      = useThresholdStore((s) => s.setHealth);
-
-  const [pDraft, setPDraft] = useState<SensorThresholds>(pt);
-  const [tDraft, setTDraft] = useState<SensorThresholds>(tt);
-  const [hDraft, setHDraft] = useState<HealthThresholds>(ht);
-
-  const handleUpdate = async (patch: Parameters<typeof update>[0]) => {
-    setSaving(true);
-    try { await update(patch); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    finally { setSaving(false); }
-  };
-
-  const handleSetMode = async (simulated: boolean) => {
-    setModeMsg(null);
-    try {
-      const result = await setMode.mutateAsync(simulated);
-      setModeMsg({ text: result.message, ok: result.success });
-    } catch (err) {
-      setModeMsg({ text: err instanceof Error ? err.message : 'Request failed', ok: false });
-    }
-    setTimeout(() => setModeMsg(null), 4000);
-  };
-
-  const handleConnect = async () => {
-    const ip = ipDraft.trim();
-    if (!ip) { setConnectMsg({ text: 'Enter a device IP address', ok: false }); return; }
-    setConnecting(true);
-    setConnectMsg(null);
-    try {
-      const port = settings?.last_device_port ?? 8000;
-      await update({ last_device_ip: ip });
-      const apiBase = `http://${ip}:${port}`;
-      const device  = await platform.connectDevice(apiBase);
-      const cfg     = deviceInfoToConfig(device, (settings?.preferred_protocol ?? 'lan') as ConnectionProtocol);
-      setConfig(cfg);
-      setConnectMsg({ text: `Connected to ${device.device_name} at ${ip}`, ok: true });
-    } catch (err) {
-      setConnectMsg({ text: err instanceof Error ? err.message : 'Connection failed', ok: false });
-    } finally {
-      setConnecting(false);
-      setTimeout(() => setConnectMsg(null), 6000);
-    }
-  };
-
-  const handleBack = onBack ?? goBack;
-
-  if (loading || !settings) {
-    return (
-      <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-3)' }}>
-        <span className="text-sm">Loading settings…</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex flex-col h-full">
-      {/* Inner header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b flex-shrink-0"
-        style={{ borderColor: 'var(--border)' }}>
-        <button onClick={handleBack} className="flex items-center gap-1.5 text-sm transition-colors"
-          style={{ color: 'var(--text-3)' }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; }}>
-          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          Back
-        </button>
-        <span className="text-sm font-bold tracking-widest uppercase" style={{ color: 'var(--text)' }}>Settings</span>
-        {saved  && <span className="ml-auto text-xs font-semibold" style={{ color: 'var(--ok)' }}>✓ Saved</span>}
-        {saving && <span className="ml-auto text-xs" style={{ color: 'var(--warn)' }}>Saving…</span>}
-      </div>
-
-      <div className="flex-1 overflow-auto p-3 sm:p-4 max-w-2xl w-full mx-auto">
-
-        <Section title="BACKEND SERVICE">
-          <Row label="Status">
-            <span style={{ color: backendStatus?.health_ok ? 'var(--ok)' : 'var(--crit)' }}>
-              {backendStatus?.health_ok ? 'Running' : 'Stopped'}
-              {backendStatus?.external && ' (external)'}
-            </span>
-          </Row>
-          <Row label="Port">
-            <span className="font-mono text-xs">{settings.last_backend_port}</span>
-          </Row>
-          <Row label="Auto-start on launch">
-            <Toggle checked={settings.backend_auto_start}
-              onChange={(v) => handleUpdate({ backend_auto_start: v })} />
-          </Row>
-          <div className="flex gap-2 mt-3">
-            <button onClick={() => startAsync().catch(() => {})}
-              className="flex-1 rounded px-3 py-2 text-sm font-semibold transition-colors"
-              style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' }}>
-              Start
-            </button>
-            <button onClick={() => stop().catch(() => {})}
-              className="flex-1 rounded px-3 py-2 text-sm font-medium transition-colors"
-              style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
-              Stop
-            </button>
-          </div>
-        </Section>
-
-        {/* ── Data Source ──────────────────────────────────────────────────── */}
-        <Section title="DATA SOURCE">
-          <Row label="Active Mode">
-            {health ? (
-              <span
-                className="font-semibold tracking-widest text-xs"
-                style={{ color: health.mode === 'simulated' ? 'var(--warn)' : 'var(--ok)' }}
-              >
-                {health.mode === 'simulated' ? 'SIMULATION' : 'HARDWARE'}
-              </span>
-            ) : (
-              <span style={{ color: 'var(--text-3)' }}>—</span>
+            {/* Status message */}
+            {message && (
+              <div className={`rounded px-3 py-2 text-xs border ${message.ok ? 'bg-green-900/20 border-green-600 text-green-400' : 'bg-red-900/20 border-red-600 text-red-400'}`}>
+                {message.text}
+              </div>
             )}
-          </Row>
-
-          <p className="text-2xs mt-2 mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
-            Switch the backend between its built-in simulator and real GPIO/I2C hardware sensors.
-            Switching to hardware will fail gracefully if the Pi drivers are not available,
-            leaving simulation active.
-          </p>
-
-          {modeMsg && (
-            <div
-              className="rounded px-3 py-2 text-xs mb-3"
-              style={{
-                background: modeMsg.ok ? 'var(--ok-dim, rgba(32,208,104,0.08))' : 'var(--warn-dim)',
-                border: `1px solid ${modeMsg.ok ? 'var(--ok)' : 'var(--warn)'}`,
-                color: modeMsg.ok ? 'var(--ok)' : 'var(--warn)',
-              }}
-            >
-              {modeMsg.text}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => { void handleSetMode(false); }}
-              disabled={setMode.isPending || health?.mode === 'hardware'}
-              className="flex-1 rounded px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
-              style={{
-                background: health?.mode === 'hardware' ? 'var(--ok-dim, rgba(32,208,104,0.12))' : 'var(--panel-alt)',
-                border: `1px solid ${health?.mode === 'hardware' ? 'var(--ok)' : 'var(--border)'}`,
-                color: health?.mode === 'hardware' ? 'var(--ok)' : 'var(--text-2)',
-              }}
-            >
-              {health?.mode === 'hardware' ? '✓ Hardware' : 'Use Hardware'}
-            </button>
-            <button
-              onClick={() => { void handleSetMode(true); }}
-              disabled={setMode.isPending || health?.mode === 'simulated'}
-              className="flex-1 rounded px-3 py-2 text-sm font-medium transition-colors disabled:opacity-40"
-              style={{
-                background: health?.mode === 'simulated' ? 'var(--warn-dim)' : 'var(--panel-alt)',
-                border: `1px solid ${health?.mode === 'simulated' ? 'var(--warn)' : 'var(--border)'}`,
-                color: health?.mode === 'simulated' ? 'var(--warn)' : 'var(--text-2)',
-              }}
-            >
-              {health?.mode === 'simulated' ? '✓ Simulation' : 'Use Simulation'}
-            </button>
           </div>
-        </Section>
+        </section>
 
-        {/* ── Bridge Configuration ─────────────────────────────────────── */}
-        <BridgeSection
-          apiBase={bridgeApiBase}
-          bridgeUrl={bridgeUrl}
-          setBridgeUrl={setBridgeUrl}
-          bridges={bridges}
-          setBridges={setBridges}
-          bridgeMsg={bridgeMsg}
-          setBridgeMsg={setBridgeMsg}
-          registering={registering}
-          setRegistering={setRegistering}
-          bridgePollRef={bridgePollRef}
-          inputClass={inputClass}
-        />
+        {/* Configured Bridges Table */}
+        <section className="bg-[#1a1f2e] rounded-lg border border-gray-700/50 overflow-hidden">
+          <div className="px-5 py-3 border-b border-gray-700/50">
+            <h2 className="text-sm font-bold tracking-wider text-white uppercase">Equipment Bridges</h2>
+            <p className="text-xs text-gray-400 mt-1">
+              All equipment types with configured bridge URLs.
+            </p>
+          </div>
+          <div className="p-5">
+            {equipmentTypes.filter((et) => et.bridgeUrl).length === 0 ? (
+              <div className="text-center py-6 text-gray-500 text-sm">
+                No bridges configured. Select an equipment type above and enter a bridge URL.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-gray-700">
+                      <th className="text-left py-2 px-2 text-gray-400 font-semibold">Equipment</th>
+                      <th className="text-left py-2 px-2 text-gray-400 font-semibold">Bridge URL</th>
+                      <th className="text-center py-2 px-2 text-gray-400 font-semibold">Status</th>
+                      <th className="text-center py-2 px-2 text-gray-400 font-semibold">Polls</th>
+                      <th className="text-center py-2 px-2 text-gray-400 font-semibold">Last Seen</th>
+                      <th className="text-right py-2 px-2 text-gray-400 font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {equipmentTypes.filter((et) => et.bridgeUrl).map((et) => {
+                      const bridge = bridges.find((b) => b.equipmentTypeId === et.id);
+                      return (
+                        <tr key={et.id} className="border-b border-gray-700/50 hover:bg-gray-800/30">
+                          <td className="py-2 px-2 text-white font-medium">{et.label}</td>
+                          <td className="py-2 px-2 font-mono text-green-400">{et.bridgeUrl}</td>
+                          <td className={`py-2 px-2 text-center font-semibold ${bridge ? statusColor(bridge.status) : 'text-gray-500'}`}>
+                            {bridge ? bridge.status.toUpperCase() : 'PENDING'}
+                          </td>
+                          <td className="py-2 px-2 text-center text-gray-300">{bridge?.pollCount ?? 0}</td>
+                          <td className="py-2 px-2 text-center text-gray-400">{bridge ? ago(bridge.lastSeen) : '—'}</td>
+                          <td className="py-2 px-2 text-right">
+                            <button
+                              onClick={() => { void handleRemoveBridge(et.id); }}
+                              className="text-red-400 hover:text-red-300 font-semibold"
+                            >
+                              Remove
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
 
-        <Section title="DEVICE CONNECTION">
-          <Row label="Device IP">
-            <input
-              type="text"
-              value={ipDraft}
-              onChange={(e) => setIpDraft(e.target.value)}
-              placeholder="192.168.1.x"
-              style={{ ...inputClass, width: 148 }}
-            />
-          </Row>
-          <Row label="API port">
-            <input type="number" value={settings.last_device_port}
-              onChange={(e) => handleUpdate({ last_device_port: +e.target.value })}
-              style={{ ...inputClass, width: 80, textAlign: 'center' }} />
-          </Row>
-          <Row label="Modbus TCP port">
-            <input type="number" value={settings.last_modbus_tcp_port}
-              onChange={(e) => handleUpdate({ last_modbus_tcp_port: +e.target.value })}
-              style={{ ...inputClass, width: 80, textAlign: 'center' }} />
-          </Row>
-          <Row label="Preferred protocol">
-            <select value={settings.preferred_protocol}
-              onChange={(e) => handleUpdate({ preferred_protocol: e.target.value })}
-              style={{ ...inputClass, width: 'auto', padding: '2px 6px' }}>
-              <option value="lan">LAN / Ethernet</option>
-              <option value="wifi">Wi-Fi</option>
-              <option value="manual">Manual IP</option>
-              <option value="simulation">Simulation</option>
-            </select>
-          </Row>
-
-          {connectMsg && (
-            <div className="rounded px-3 py-2 text-xs mt-3"
-              style={{
-                background: connectMsg.ok ? 'var(--ok-dim, rgba(32,208,104,0.08))' : 'var(--warn-dim)',
-                border: `1px solid ${connectMsg.ok ? 'var(--ok)' : 'var(--warn)'}`,
-                color: connectMsg.ok ? 'var(--ok)' : 'var(--warn)',
-              }}>
-              {connectMsg.text}
+        {/* Active Bridges (all registered, including non-equipment ones) */}
+        {bridges.length > 0 && (
+          <section className="bg-[#1a1f2e] rounded-lg border border-gray-700/50 overflow-hidden">
+            <div className="px-5 py-3 border-b border-gray-700/50">
+              <h2 className="text-sm font-bold tracking-wider text-white uppercase">Active Polling</h2>
+              <p className="text-xs text-gray-400 mt-1">
+                All bridges currently being polled by the backend.
+              </p>
             </div>
-          )}
-
-          <button
-            onClick={() => { void handleConnect(); }}
-            disabled={connecting || !ipDraft.trim()}
-            className="w-full mt-3 rounded px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
-            style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
-          >
-            {connecting ? 'Connecting…' : 'Connect to Device'}
-          </button>
-        </Section>
-
-        <Section title="MODBUS RTU (RS-485)">
-          <Row label="COM port">
-            <input type="text" placeholder="/dev/ttyUSB0 or COM3"
-              value={settings.last_rtu_port ?? ''}
-              onChange={(e) => handleUpdate({ last_rtu_port: e.target.value || null })}
-              style={{ ...inputClass, width: 160 }} />
-          </Row>
-          <Row label="Baudrate">
-            <select value={settings.last_rtu_baudrate}
-              onChange={(e) => handleUpdate({ last_rtu_baudrate: +e.target.value })}
-              style={{ ...inputClass, width: 'auto', padding: '2px 6px' }}>
-              {[9600, 19200, 38400, 57600, 115200].map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
-          </Row>
-          <Row label="Slave ID">
-            <input type="number" min={1} max={247} value={settings.last_rtu_slave_id}
-              onChange={(e) => handleUpdate({ last_rtu_slave_id: +e.target.value })}
-              style={{ ...inputClass, width: 64, textAlign: 'center' }} />
-          </Row>
-        </Section>
-
-        <Section title="ALARM THRESHOLDS">
-          <p className="text-2xs mb-3" style={{ color: 'var(--text-3)' }}>
-            Changes apply immediately and persist across sessions.
-            LL = Low-Low (critical) · L = Low (warning) · H = High (warning) · HH = High-High (critical)
-          </p>
-
-          {/* Pressure */}
-          <div className="mb-3">
-            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>PRESSURE (bar)</div>
-            <div className="grid grid-cols-4 gap-2">
-              {(['ll', 'l', 'h', 'hh'] as const).map((key) => (
-                <div key={key}>
-                  <div className="text-2xs mb-1 font-semibold" style={{ color: key === 'll' || key === 'hh' ? 'var(--crit)' : 'var(--warn)' }}>
-                    {key.toUpperCase()}
+            <div className="p-5 space-y-2">
+              {bridges.map((b) => (
+                <div key={b.id} className="flex items-center justify-between bg-[#0f1419] rounded px-3 py-2 border border-gray-700/50">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-mono text-white truncate">{b.url}</div>
+                    <div className="flex gap-3 mt-0.5 text-[10px] text-gray-400">
+                      <span className={statusColor(b.status)}>{b.status.toUpperCase()}</span>
+                      <span>polls: {b.pollCount}</span>
+                      {b.errorCount > 0 && <span className="text-red-400">errors: {b.errorCount}</span>}
+                      <span>seen: {ago(b.lastSeen)}</span>
+                      {b.equipmentTypeId && <span className="text-blue-400">equip: {b.equipmentTypeId}</span>}
+                    </div>
                   </div>
-                  <input
-                    type="number" step="0.1" value={pDraft[key]}
-                    onChange={(e) => setPDraft((d) => ({ ...d, [key]: parseFloat(e.target.value) || 0 }))}
-                    onBlur={() => setPressure(pDraft)}
-                    style={{ ...inputClass, width: '100%', textAlign: 'center' }}
-                  />
+                  <button
+                    onClick={() => { void handleUnregisterBridge(b.id); }}
+                    className="text-[10px] px-2 py-1 bg-red-900/30 text-red-400 border border-red-700/50 rounded font-semibold hover:bg-red-900/50"
+                  >
+                    Stop
+                  </button>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Temperature */}
-          <div className="mb-3">
-            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>TEMPERATURE (°C)</div>
-            <div className="grid grid-cols-4 gap-2">
-              {(['ll', 'l', 'h', 'hh'] as const).map((key) => (
-                <div key={key}>
-                  <div className="text-2xs mb-1 font-semibold" style={{ color: key === 'll' || key === 'hh' ? 'var(--crit)' : 'var(--warn)' }}>
-                    {key.toUpperCase()}
-                  </div>
-                  <input
-                    type="number" step="0.5" value={tDraft[key]}
-                    onChange={(e) => setTDraft((d) => ({ ...d, [key]: parseFloat(e.target.value) || 0 }))}
-                    onBlur={() => setTemperature(tDraft)}
-                    style={{ ...inputClass, width: '100%', textAlign: 'center' }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Health Score */}
-          <div>
-            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>SYSTEM HEALTH (score 0–100)</div>
-            <div className="grid grid-cols-4 gap-2">
-              {(['ll', 'l'] as const).map((key) => (
-                <div key={key}>
-                  <div className="text-2xs mb-1 font-semibold" style={{ color: key === 'll' ? 'var(--crit)' : 'var(--warn)' }}>
-                    {key.toUpperCase()}
-                  </div>
-                  <input
-                    type="number" step="1" min="0" max="100" value={hDraft[key]}
-                    onChange={(e) => setHDraft((d) => ({ ...d, [key]: parseInt(e.target.value) || 0 }))}
-                    onBlur={() => setHealth(hDraft)}
-                    style={{ ...inputClass, width: '100%', textAlign: 'center' }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        </Section>
-
-        <Section title="APPLICATION">
-          <Row label="Version">
-            <span className="font-mono text-xs">v{appVersion}</span>
-          </Row>
-          <Row label="Settings location">
-            <span className="text-xs" style={{ color: 'var(--text-3)' }}>Tauri app data dir</span>
-          </Row>
-        </Section>
+          </section>
+        )}
 
       </div>
     </div>

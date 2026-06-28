@@ -1,11 +1,14 @@
 services:
   - type: web
-    name: ultron-backend
-    runtime: docker
-    dockerfilePath: ./ultron-backend/Dockerfile
-    dockerContext: ./ultron-backend
+    name: ultron-backend-2
+    runtime: python
+    rootDir: ./ultron-backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
     plan: free
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
       - key: SIMULATED
         value: "true"
       - key: HOST
@@ -15,7 +18,7 @@ services:
       - key: DB_ENABLED
         value: "true"
       - key: DB_PATH
-        value: "/app/data/ultron.db"
+        value: "/opt/render/project/src/data/ultron.db"
       - key: MODBUS_TCP_ENABLED
         value: "false"
       - key: MODBUS_RTU_ENABLED
