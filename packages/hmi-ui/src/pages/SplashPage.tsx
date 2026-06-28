@@ -6,6 +6,10 @@ import type { TauriDeviceInfo } from '../types/tauri';
 
 type StartupPhase = 'init' | 'loading-settings' | 'starting-backend' | 'backend-ok' | 'discovering' | 'found' | 'not-found' | 'error';
 
+// Backend URL configured at build time (set for the hosted Vercel deployment).
+// When present, the app connects only to this backend — no local discovery, no simulation.
+const CLOUD_API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+
 const MESSAGES: Record<StartupPhase, string> = {
   'init':              'Initializing ULTRON…',
   'loading-settings':  'Loading saved settings…',
@@ -28,10 +32,10 @@ export const SplashPage: React.FC = () => {
   const setBackendRunning = useAppStore((s) => s.setBackendRunning);
   const setAppVersion    = useAppStore((s) => s.setAppVersion);
   const setConfig        = useConnectionStore((s) => s.setConfig);
-  const enterSim         = useConnectionStore((s) => s.enterSimulation);
 
   const unlistenRef = useRef<(() => void) | null>(null);
   const didRun      = useRef(false);
+  const cancelled   = useRef(false);
 
   const pushLog = (msg: string) => setLog((prev) => [...prev.slice(-7), msg]);
   const advance = (p: StartupPhase, msg?: string) => {
@@ -41,11 +45,6 @@ export const SplashPage: React.FC = () => {
     pushLog(txt);
   };
 
-  const goSimulation = () => {
-    platform.startSimulation().catch(() => {});
-    enterSim();
-    setAppPhase('simulation');
-  };
   const goDiscovery = () => setAppPhase('discovery');
 
   useEffect(() => {
@@ -59,28 +58,43 @@ export const SplashPage: React.FC = () => {
       let lastIp: string | null = null;
       try { const s = await platform.getSavedSettings(); lastIp = s.last_device_ip; } catch {}
 
+      // Cloud / hosted deployment: a backend URL is configured at build time.
+      // Connect straight to it, retrying until it responds (the free-tier host can
+      // cold-start for up to a minute), then open the dashboard. No simulation fallback.
+      if (CLOUD_API_BASE) {
+        advance('starting-backend');
+        let attempt = 0;
+        while (!cancelled.current) {
+          try {
+            const device = await platform.connectDevice(CLOUD_API_BASE);
+            setBackendRunning(true);
+            advance('found', 'Connected — opening dashboard…');
+            setConfig(deviceInfoToConfig(device, 'manual'));
+            platform.saveSettings({ last_device_ip: CLOUD_API_BASE }).catch(() => {});
+            await new Promise<void>((r) => setTimeout(r, 400));
+            if (!cancelled.current) setAppPhase('connected');
+            return;
+          } catch {
+            attempt += 1;
+            setBackendRunning(false);
+            advance('starting-backend', attempt <= 1
+              ? MESSAGES['starting-backend']
+              : 'Waking the backend… first load can take up to a minute.');
+            await new Promise<void>((r) => setTimeout(r, 3000));
+          }
+        }
+        return;
+      }
+
       advance('starting-backend');
-      let backendExternal = false;
-      let backendHealthOk = false;
       try {
         const status = await platform.startBackend();
         setBackendRunning(status.health_ok);
-        backendExternal = !!status.external;
-        backendHealthOk = !!status.health_ok;
         advance('backend-ok', status.external ? 'Backend already running (external).' : MESSAGES['backend-ok']);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setBackendError(msg);
         pushLog(`Backend warning: ${msg}`);
-      }
-
-      // If backend is running externally (cloud deployment), skip discovery and auto-connect
-      if (backendExternal && backendHealthOk) {
-        advance('found', 'Connected to cloud backend — opening dashboard…');
-        enterSim();
-        await new Promise<void>((r) => setTimeout(r, 500));
-        setAppPhase('connected');
-        return;
       }
 
       if (platform.onDiscoveryProgress) {
@@ -126,7 +140,10 @@ export const SplashPage: React.FC = () => {
       setMessage(`Startup failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
-    return () => { if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; } };
+    return () => {
+      cancelled.current = true;
+      if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platform]);
 
@@ -201,21 +218,6 @@ export const SplashPage: React.FC = () => {
               )}
               <button onClick={goDiscovery} className="btn-primary w-full">
                 Search Again / Enter IP
-              </button>
-              <button onClick={goSimulation} className="btn-secondary w-full">
-                Continue in Simulation Mode
-              </button>
-            </div>
-          )}
-
-          {/* Skip during search */}
-          {isSearching && (
-            <div className="flex justify-center mt-4">
-              <button onClick={goSimulation} className="text-xs transition-colors underline underline-offset-2"
-                style={{ color: 'var(--text-3)' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; }}>
-                Skip — use simulation
               </button>
             </div>
           )}
