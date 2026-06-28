@@ -69,7 +69,8 @@ _reading_buffer: list = []  # staging area — flushed to SQLite every DB_BATCH_
 async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> None:
     """
     Called by BridgeManager when real data arrives from a registered bridge.
-    Creates a SensorReading from the bridge data and broadcasts it.
+    Creates a SensorReading from the bridge data and broadcasts it with
+    the equipment_type_id tag so frontends display data for the correct equipment.
     """
     from app.models import SensorReading, SystemStatus
 
@@ -81,7 +82,7 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
         status=status,
     )
     sensor_manager._latest = reading
-    await ws_manager.broadcast(reading)
+    await ws_manager.broadcast(reading, equipment_type_id=bridge_info.equipment_type_id)
     modbus_service.update_registers(
         reading, uptime_s=time.monotonic() - _start_time
     )
@@ -92,10 +93,11 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
             "pressure":    reading.pressure,
             "temperature": reading.temperature,
             "status":      reading.status.value,
+            "equipment_type_id": bridge_info.equipment_type_id,
         })
     logger.debug(
-        "Bridge data: P=%.2f T=%.2f from %s",
-        pressure, temperature, bridge_info.url,
+        "Bridge data: P=%.2f T=%.2f from %s (equip=%s)",
+        pressure, temperature, bridge_info.url, bridge_info.equipment_type_id,
     )
 
 
@@ -208,6 +210,8 @@ async def lifespan(app: FastAPI):
     # Start bridge manager (polls registered bridge endpoints)
     bridge_manager.set_data_callback(_on_bridge_data)
     await bridge_manager.start()
+    # Sync bridges from asset hierarchy DB (equipment_type nodes with bridge_url)
+    await bridge_manager.sync_from_asset_db()
 
     # Start the combined sensor → WS → Modbus loop
     sensor_task = asyncio.create_task(
@@ -516,8 +520,8 @@ async def register_bridge(request: BridgeRegisterRequest) -> BridgeRegisterRespo
     if not url.startswith("http"):
         url = "http://" + url
 
-    bridge = await bridge_manager.register(url)
-    logger.info("Bridge registered via API: %s (id=%s)", url, bridge.id)
+    bridge = await bridge_manager.register(url, request.equipment_type_id)
+    logger.info("Bridge registered via API: %s (id=%s, equip=%s)", url, bridge.id, request.equipment_type_id)
     return BridgeRegisterResponse(
         success=True,
         bridge_id=bridge.id,

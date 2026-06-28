@@ -123,6 +123,7 @@ class BridgeRegisterRequest(BaseModel):
     """Request body for POST /api/bridges/register."""
 
     url: str = Field(..., description="Bridge URL (e.g. http://192.168.1.100:8765)")
+    equipment_type_id: str = Field(default="", description="Equipment type node ID to associate bridge with")
 
 
 class BridgeRegisterResponse(BaseModel):

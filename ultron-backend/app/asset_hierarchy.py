@@ -29,10 +29,15 @@ CREATE TABLE IF NOT EXISTS asset_nodes (
     label     TEXT NOT NULL,
     code      TEXT DEFAULT '',
     sort_order INTEGER DEFAULT 0,
+    bridge_url TEXT DEFAULT '',
     FOREIGN KEY (parent_id) REFERENCES asset_nodes(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_asset_parent ON asset_nodes(parent_id);
 CREATE INDEX IF NOT EXISTS idx_asset_level ON asset_nodes(level);
+"""
+
+_MIGRATION_ADD_BRIDGE_URL = """
+ALTER TABLE asset_nodes ADD COLUMN bridge_url TEXT DEFAULT '';
 """
 
 _SEED_DATA = [
@@ -71,6 +76,14 @@ def init_asset_db(conn: sqlite3.Connection) -> None:
     _conn.executescript(_SCHEMA)
     _conn.commit()
 
+    # Migration: add bridge_url column if missing (existing DBs)
+    try:
+        _conn.execute("SELECT bridge_url FROM asset_nodes LIMIT 1")
+    except sqlite3.OperationalError:
+        _conn.executescript(_MIGRATION_ADD_BRIDGE_URL)
+        _conn.commit()
+        logger.info("Migration: added bridge_url column to asset_nodes")
+
     count = _conn.execute("SELECT COUNT(*) FROM asset_nodes").fetchone()[0]
     if count == 0:
         _conn.executemany(
@@ -94,6 +107,7 @@ class AssetNodeResponse(BaseModel):
     label: str
     code: str = ""
     sort_order: int = 0
+    bridge_url: str = ""
 
 
 class AssetNodeCreate(BaseModel):
@@ -106,6 +120,11 @@ class AssetNodeCreate(BaseModel):
 class AssetNodeUpdate(BaseModel):
     label: Optional[str] = None
     code: Optional[str] = None
+    bridge_url: Optional[str] = None
+
+
+class BridgeUrlUpdate(BaseModel):
+    bridge_url: str
 
 
 class AssetTreeNode(BaseModel):
@@ -113,6 +132,7 @@ class AssetTreeNode(BaseModel):
     label: str
     code: str = ""
     level: str
+    bridge_url: str = ""
     children: list["AssetTreeNode"] = []
 
 
@@ -128,6 +148,7 @@ def _row_to_dict(row: tuple) -> dict:
         "label": row[3],
         "code": row[4] or "",
         "sort_order": row[5],
+        "bridge_url": row[6] if len(row) > 6 else "",
     }
 
 
@@ -142,6 +163,7 @@ def _build_tree(nodes: list[dict], parent_id: Optional[str] = None) -> list[dict
             "label": child["label"],
             "code": child["code"],
             "level": child["level"],
+            "bridge_url": child.get("bridge_url", ""),
             "children": _build_tree(nodes, child["id"]),
         }
         result.append(tree_node)
@@ -158,7 +180,7 @@ async def get_asset_tree():
     if _conn is None:
         raise HTTPException(503, "Database not initialized")
     rows = _conn.execute(
-        "SELECT id, parent_id, level, label, code, sort_order FROM asset_nodes ORDER BY sort_order"
+        "SELECT id, parent_id, level, label, code, sort_order, bridge_url FROM asset_nodes ORDER BY sort_order"
     ).fetchall()
     nodes = [_row_to_dict(r) for r in rows]
     return _build_tree(nodes, None)
@@ -170,7 +192,7 @@ async def get_asset_flat():
     if _conn is None:
         raise HTTPException(503, "Database not initialized")
     rows = _conn.execute(
-        "SELECT id, parent_id, level, label, code, sort_order FROM asset_nodes ORDER BY level, sort_order"
+        "SELECT id, parent_id, level, label, code, sort_order, bridge_url FROM asset_nodes ORDER BY level, sort_order"
     ).fetchall()
     return [_row_to_dict(r) for r in rows]
 
@@ -216,12 +238,12 @@ async def create_asset_node(body: AssetNodeCreate):
 
 @router.put("/{node_id}", response_model=AssetNodeResponse)
 async def update_asset_node(node_id: str, body: AssetNodeUpdate):
-    """Update an existing asset node's label or code."""
+    """Update an existing asset node's label, code, or bridge_url."""
     if _conn is None:
         raise HTTPException(503, "Database not initialized")
 
     existing = _conn.execute(
-        "SELECT id, parent_id, level, label, code, sort_order FROM asset_nodes WHERE id = ?",
+        "SELECT id, parent_id, level, label, code, sort_order, bridge_url FROM asset_nodes WHERE id = ?",
         (node_id,),
     ).fetchone()
     if not existing:
@@ -232,13 +254,70 @@ async def update_asset_node(node_id: str, body: AssetNodeUpdate):
         node["label"] = body.label
     if body.code is not None:
         node["code"] = body.code
+    if body.bridge_url is not None:
+        node["bridge_url"] = body.bridge_url
 
     _conn.execute(
-        "UPDATE asset_nodes SET label = ?, code = ? WHERE id = ?",
-        (node["label"], node["code"], node_id),
+        "UPDATE asset_nodes SET label = ?, code = ?, bridge_url = ? WHERE id = ?",
+        (node["label"], node["code"], node["bridge_url"], node_id),
     )
     _conn.commit()
     return node
+
+
+@router.put("/{node_id}/bridge", response_model=AssetNodeResponse)
+async def set_bridge_url(node_id: str, body: BridgeUrlUpdate):
+    """Set the bridge URL for an equipment type node."""
+    if _conn is None:
+        raise HTTPException(503, "Database not initialized")
+
+    existing = _conn.execute(
+        "SELECT id, parent_id, level, label, code, sort_order, bridge_url FROM asset_nodes WHERE id = ?",
+        (node_id,),
+    ).fetchone()
+    if not existing:
+        raise HTTPException(404, f"Node '{node_id}' not found")
+
+    node = _row_to_dict(existing)
+    if node["level"] != "equipmentType":
+        raise HTTPException(400, "Bridge URL can only be set on equipmentType nodes")
+
+    url = body.bridge_url.strip()
+    _conn.execute(
+        "UPDATE asset_nodes SET bridge_url = ? WHERE id = ?",
+        (url, node_id),
+    )
+    _conn.commit()
+    node["bridge_url"] = url
+    return node
+
+
+@router.delete("/{node_id}/bridge", status_code=200)
+async def remove_bridge_url(node_id: str):
+    """Remove the bridge URL from an equipment type node."""
+    if _conn is None:
+        raise HTTPException(503, "Database not initialized")
+
+    existing = _conn.execute(
+        "SELECT id FROM asset_nodes WHERE id = ?", (node_id,)
+    ).fetchone()
+    if not existing:
+        raise HTTPException(404, f"Node '{node_id}' not found")
+
+    _conn.execute("UPDATE asset_nodes SET bridge_url = '' WHERE id = ?", (node_id,))
+    _conn.commit()
+    return {"success": True, "message": "Bridge URL removed"}
+
+
+def get_equipment_bridges() -> list[dict]:
+    """Get all equipment type nodes that have a bridge_url configured."""
+    if _conn is None:
+        return []
+    rows = _conn.execute(
+        "SELECT id, parent_id, level, label, code, sort_order, bridge_url "
+        "FROM asset_nodes WHERE level = 'equipmentType' AND bridge_url != ''"
+    ).fetchall()
+    return [_row_to_dict(r) for r in rows]
 
 
 @router.delete("/{node_id}", status_code=204)

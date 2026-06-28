@@ -46,15 +46,19 @@ class WebSocketManager:
     # Broadcast
     # ------------------------------------------------------------------
 
-    async def broadcast(self, reading: SensorReading) -> None:
+    async def broadcast(self, reading: SensorReading, equipment_type_id: str = "") -> None:
         """
         Serialise *reading* and push it to every connected client.
+        Includes equipment_type_id so the frontend shows data for the correct equipment.
         Clients whose connections have gone stale are removed from the set.
         """
         if not self._connections:
             return
 
-        payload = orjson.dumps(reading.model_dump(mode="python")).decode()
+        data = reading.model_dump(mode="python")
+        if equipment_type_id:
+            data["equipment_type_id"] = equipment_type_id
+        payload = orjson.dumps(data).decode()
 
         async with self._lock:
             snapshot = set(self._connections)

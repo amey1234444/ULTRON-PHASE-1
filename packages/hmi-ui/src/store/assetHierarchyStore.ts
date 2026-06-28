@@ -14,6 +14,7 @@ export interface AssetTreeNode {
   label: string;
   code: string;
   level: AssetLevel;
+  bridge_url?: string;
   children: AssetTreeNode[];
 }
 

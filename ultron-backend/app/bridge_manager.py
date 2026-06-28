@@ -1,13 +1,8 @@
 """
 ULTRON - Industrial IoT Monitoring System
-Bridge Manager: registers external bridge IP:port endpoints and polls them
-for live sensor data. When data arrives from a bridge, it is broadcast to
-all connected WebSocket clients via the WebSocketManager.
-
-Architecture:
-    Frontend (Settings UI) -> POST /api/bridges/register {url: "http://192.168.1.100:8765"}
-    Backend stores the bridge URL and starts polling it every POLL_INTERVAL seconds.
-    Each poll: GET {bridge_url}/api/live -> parse JSON -> broadcast via WebSocket.
+Bridge Manager: polls bridge endpoints configured per equipment type.
+Each equipment type node can have a bridge_url; this manager polls all
+configured bridges and delivers data tagged with equipment_type_id.
 """
 
 import asyncio
@@ -29,9 +24,10 @@ STALE_AFTER_S = 10.0
 class BridgeInfo:
     """Runtime state for a single registered bridge."""
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, equipment_type_id: str = "") -> None:
         self.id: str = uuid.uuid4().hex[:12]
         self.url: str = url.rstrip("/")
+        self.equipment_type_id: str = equipment_type_id
         self.status: str = "connecting"  # connecting | connected | error
         self.last_seen: float = 0.0
         self.last_error: Optional[str] = None
@@ -44,6 +40,7 @@ class BridgeInfo:
         return {
             "id": self.id,
             "url": self.url,
+            "equipmentTypeId": self.equipment_type_id,
             "status": self.status,
             "lastSeen": self.last_seen,
             "lastError": self.last_error,
@@ -55,14 +52,10 @@ class BridgeInfo:
 
 
 def _normalize_bridge_data(raw: dict) -> dict:
-    """
-    Normalize data from a bridge response into standard ULTRON fields.
-    Handles different field naming conventions from various bridge implementations.
-    """
+    """Normalize data from a bridge response into standard ULTRON fields."""
     pressure = None
     temperature = None
 
-    # Pressure: try multiple field names
     for key in ("pressureBar", "pressure", "pressure_bar"):
         val = raw.get(key)
         if val is not None:
@@ -72,18 +65,16 @@ def _normalize_bridge_data(raw: dict) -> dict:
             except (ValueError, TypeError):
                 pass
 
-    # If pressure is from percent, convert
     if pressure is None:
         for key in ("pressurePercent", "pressure_percent"):
             val = raw.get(key)
             if val is not None:
                 try:
-                    pressure = float(val) / 100.0 * 10.0  # full scale 10 bar
+                    pressure = float(val) / 100.0 * 10.0
                     break
                 except (ValueError, TypeError):
                     pass
 
-    # Temperature: try multiple field names
     for key in ("temperatureC", "temperature", "temperature_c"):
         val = raw.get(key)
         if val is not None:
@@ -93,7 +84,6 @@ def _normalize_bridge_data(raw: dict) -> dict:
             except (ValueError, TypeError):
                 pass
 
-    # Nested data structures (some bridges wrap in "data" or "metrics")
     nested = raw.get("data") or raw.get("metrics")
     if isinstance(nested, dict):
         if pressure is None:
@@ -126,9 +116,7 @@ def _normalize_bridge_data(raw: dict) -> dict:
 
 
 class BridgeManager:
-    """
-    Manages registered bridge endpoints and polls them for live sensor data.
-    """
+    """Manages per-equipment-type bridge polling."""
 
     def __init__(self) -> None:
         self._bridges: dict[str, BridgeInfo] = {}
@@ -142,7 +130,6 @@ class BridgeManager:
         self._on_data_callback = callback
 
     async def start(self) -> None:
-        """Start the polling loop."""
         self._client = httpx.AsyncClient(timeout=BRIDGE_TIMEOUT_S)
         self._poll_task = asyncio.create_task(
             self._poll_loop(), name="ultron-bridge-poller"
@@ -150,7 +137,6 @@ class BridgeManager:
         logger.info("BridgeManager started (poll interval=%.1fs)", POLL_INTERVAL_S)
 
     async def stop(self) -> None:
-        """Stop the polling loop and close HTTP client."""
         if self._poll_task:
             self._poll_task.cancel()
             try:
@@ -161,25 +147,21 @@ class BridgeManager:
             await self._client.aclose()
         logger.info("BridgeManager stopped")
 
-    async def register(self, url: str) -> BridgeInfo:
-        """Register a new bridge URL. Returns the BridgeInfo."""
+    async def register(self, url: str, equipment_type_id: str = "") -> BridgeInfo:
+        """Register a new bridge URL, optionally tied to an equipment type."""
         url = url.rstrip("/")
-
-        # Check for duplicate URL
         async with self._lock:
             for bridge in self._bridges.values():
                 if bridge.url == url:
-                    logger.info("Bridge already registered: %s (id=%s)", url, bridge.id)
+                    if equipment_type_id and bridge.equipment_type_id != equipment_type_id:
+                        bridge.equipment_type_id = equipment_type_id
                     return bridge
-
-            bridge = BridgeInfo(url)
+            bridge = BridgeInfo(url, equipment_type_id)
             self._bridges[bridge.id] = bridge
-
-        logger.info("Bridge registered: %s (id=%s)", url, bridge.id)
+        logger.info("Bridge registered: %s (id=%s, equipment=%s)", url, bridge.id, equipment_type_id)
         return bridge
 
     async def unregister(self, bridge_id: str) -> bool:
-        """Remove a bridge by ID. Returns True if found and removed."""
         async with self._lock:
             bridge = self._bridges.pop(bridge_id, None)
         if bridge:
@@ -187,14 +169,30 @@ class BridgeManager:
             return True
         return False
 
+    async def unregister_by_equipment(self, equipment_type_id: str) -> bool:
+        """Remove bridge associated with an equipment type."""
+        async with self._lock:
+            to_remove = [
+                bid for bid, b in self._bridges.items()
+                if b.equipment_type_id == equipment_type_id
+            ]
+            for bid in to_remove:
+                self._bridges.pop(bid, None)
+        return len(to_remove) > 0
+
     async def list_bridges(self) -> list[dict]:
-        """Return all registered bridges as dicts."""
         async with self._lock:
             return [b.to_dict() for b in self._bridges.values()]
 
+    def get_bridge_for_equipment(self, equipment_type_id: str) -> Optional[BridgeInfo]:
+        """Get the bridge for a specific equipment type."""
+        for b in self._bridges.values():
+            if b.equipment_type_id == equipment_type_id:
+                return b
+        return None
+
     @property
     def has_active_bridges(self) -> bool:
-        """True if any bridge is currently connected and sending data."""
         return any(
             b.status == "connected" and b.latest_data is not None
             for b in self._bridges.values()
@@ -204,11 +202,47 @@ class BridgeManager:
     def active_bridge_count(self) -> int:
         return sum(1 for b in self._bridges.values() if b.status == "connected")
 
+    async def sync_from_asset_db(self) -> None:
+        """Sync bridge registrations from asset hierarchy DB (equipment type bridge_urls)."""
+        from app.asset_hierarchy import get_equipment_bridges
+        configured = get_equipment_bridges()
+        configured_urls = {n["id"]: n["bridge_url"] for n in configured}
+
+        async with self._lock:
+            # Remove bridges no longer in config
+            to_remove = [
+                bid for bid, b in self._bridges.items()
+                if b.equipment_type_id and b.equipment_type_id not in configured_urls
+            ]
+            for bid in to_remove:
+                removed = self._bridges.pop(bid)
+                logger.info("Bridge auto-removed: %s (equipment %s gone)", removed.url, removed.equipment_type_id)
+
+            # Add/update bridges from config
+            existing_by_equip = {
+                b.equipment_type_id: b for b in self._bridges.values() if b.equipment_type_id
+            }
+            for equip_id, url in configured_urls.items():
+                if equip_id in existing_by_equip:
+                    if existing_by_equip[equip_id].url != url.rstrip("/"):
+                        existing_by_equip[equip_id].url = url.rstrip("/")
+                        existing_by_equip[equip_id].status = "connecting"
+                        existing_by_equip[equip_id].poll_count = 0
+                else:
+                    bridge = BridgeInfo(url, equip_id)
+                    self._bridges[bridge.id] = bridge
+                    logger.info("Bridge auto-registered: %s for equipment %s", url, equip_id)
+
     async def _poll_loop(self) -> None:
-        """Continuously poll all registered bridges."""
         logger.info("Bridge poll loop started")
+        sync_counter = 0
         while True:
             try:
+                # Sync from DB every 10 cycles (10s)
+                sync_counter += 1
+                if sync_counter % 10 == 0:
+                    await self.sync_from_asset_db()
+
                 async with self._lock:
                     bridges = list(self._bridges.values())
 
@@ -224,7 +258,6 @@ class BridgeManager:
             await asyncio.sleep(POLL_INTERVAL_S)
 
     async def _poll_one(self, bridge: BridgeInfo) -> None:
-        """Poll a single bridge for data."""
         poll_url = bridge.url + "/api/live"
         try:
             resp = await self._client.get(poll_url)
@@ -266,6 +299,5 @@ class BridgeManager:
             if bridge.error_count % 10 == 1:
                 logger.warning("Bridge poll error: %s -> %s", bridge.url, exc)
 
-        # Mark stale bridges
         if bridge.last_seen > 0 and (time.time() - bridge.last_seen) > STALE_AFTER_S:
             bridge.status = "error"
