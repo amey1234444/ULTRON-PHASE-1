@@ -3,7 +3,6 @@ import { MultiTrendChart }    from '../components/charts/MultiTrendChart';
 import { TrendChart }         from '../components/charts/TrendChart';
 import { useConnectionStore } from '../store/connectionStore';
 import { useSensorStore }     from '../store/sensorStore';
-import { useAppStore }        from '../store/appStore';
 import { useToastStore }      from '../store/toastStore';
 import type { SensorReading } from '../types/sensor';
 
@@ -89,9 +88,7 @@ function StatCard({ label, value, unit, color, sub }: StatProps) {
 export const HistoricalTrendsPage: React.FC = () => {
   const apiBase       = useConnectionStore((s) => s.config?.apiBase ?? 'http://localhost:8000');
   const storeReadings = useSensorStore((s) => s.readings);
-  const appPhase      = useAppStore((s) => s.appPhase);
   const push          = useToastStore((s) => s.push);
-  const isSim         = appPhase === 'simulation';
 
   const [preset,     setPreset]     = useState<PresetMinutes>(60);
   const [loading,    setLoading]    = useState(false);
@@ -169,14 +166,6 @@ export const HistoricalTrendsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Sim banner */}
-      {isSim && (
-        <div className="sim-banner">
-          <span className="status-dot animate-status-pulse" style={{ background: 'var(--warn)' }} />
-          Simulation Mode — No hardware connected
-        </div>
-      )}
-
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div
         className="flex-shrink-0"

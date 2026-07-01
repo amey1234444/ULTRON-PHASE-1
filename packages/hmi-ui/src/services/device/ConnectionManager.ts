@@ -1,16 +1,15 @@
 /**
  * ConnectionManager.ts
- * Orchestrates the WS → Modbus → Client-Simulation fallback chain.
+ * Orchestrates the WS → Modbus fallback chain.
  *
  * Priority:
  *   1. WebSocket (primary)           ws://<device-ip>:8000/ws
  *   2. Modbus TCP (fallback)         <device-ip>:5020, FC4 registers
- *   3. Client-side simulation        pure frontend data generation
  *
  * Recovery:
- *   WebSocket reconnects continuously in the background while Modbus or
- *   simulation is active.  On successful WS reconnect, Modbus/sim is
- *   stopped and the stack promotes back to WebSocket automatically.
+ *   WebSocket reconnects continuously in the background while Modbus
+ *   is active.  On successful WS reconnect, Modbus is stopped and the
+ *   stack promotes back to WebSocket automatically.
  */
 
 import type { SensorReading }   from '../../types/sensor';
@@ -20,21 +19,6 @@ import { HealthMonitor }         from '../health/HealthMonitor';
 import type { DataProtocol }     from './ConnectionTypes';
 import { FALLBACK_CONFIG }       from './ConnectionTypes';
 import type { ModbusSensorReading } from '../../types/tauri';
-
-// ── Client-side simulation ────────────────────────────────────────────────────
-
-/** Generate a plausible sensor reading without any network I/O. */
-function generateSimReading(seq: number): SensorReading {
-  const t    = (Date.now() / 1_000) + seq * 0.1;
-  const pRaw = 7.0 + Math.sin(t * 0.12) * 0.85 + (Math.random() - 0.5) * 0.08;
-  const tRaw = 80.5 + Math.sin(t * 0.07 + 1.5) * 7.2 + (Math.random() - 0.5) * 0.4;
-  return {
-    timestamp:   new Date().toISOString(),
-    pressure:    Math.round(pRaw * 100) / 100,
-    temperature: Math.round(tRaw * 10)  / 10,
-    status:      'healthy',
-  };
-}
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -50,8 +34,6 @@ export interface ConnectionManagerConfig {
   modbusHost: string;
   modbusPort: number;
   slaveId:    number;
-  /** If true, skip Modbus and go straight to client sim on WS failure. */
-  simOnly:    boolean;
   readModbusTcp?: (host: string, port: number, slaveId: number) => Promise<ModbusSensorReading>;
 }
 
@@ -61,12 +43,10 @@ export class ConnectionManager {
   private ws:      WebSocketService  | null = null;
   private modbus:  ModbusTcpService  | null = null;
   private health   = new HealthMonitor();
-  private simTimer: ReturnType<typeof setInterval> | null = null;
-  private simSeq   = 0;
 
   private _protocol:  DataProtocol = 'none';
   private _destroyed  = false;
-  /** Tracks whether we have already demoted — prevents re-entering _demoteToModbusOrSim
+  /** Tracks whether we have already demoted — prevents re-entering _demoteToModbus
    *  on every WS onError call after the initial demotion. */
   private _demoted    = false;
 
@@ -97,7 +77,6 @@ export class ConnectionManager {
 
   private _startWebSocket(): void {
     this._stopModbus();
-    this._stopSim();
 
     // Reset demotion flag so the new WS attempt tracks failures from scratch.
     this._demoted = false;
@@ -119,7 +98,6 @@ export class ConnectionManager {
           if (status === 'connected') {
             // ── WS (re-)connected: promote back and tear down fallback tier ──
             this._stopModbus();
-            this._stopSim();
             this._demoted = false;
             this._setProtocol('websocket');
           }
@@ -132,7 +110,7 @@ export class ConnectionManager {
           if (!this._demoted &&
               (this.ws?.consecutiveFails ?? 0) >= FALLBACK_CONFIG.wsFailuresBeforeModbus) {
             this._demoted = true;
-            this._demoteToModbusOrSim();
+            this._demoteToModbus();
           }
         },
       },
@@ -142,24 +120,17 @@ export class ConnectionManager {
 
   // ── Modbus tier ─────────────────────────────────────────────────────────────
 
-  private _demoteToModbusOrSim(): void {
-    if (this.cfg.simOnly) {
-      this._demoteToClientSim();
-      return;
-    }
+  private _demoteToModbus(): void {
     this._startModbus();
   }
 
   private _startModbus(): void {
     if (!this.cfg.readModbusTcp) {
-      this._demoteToClientSim();
+      this.cbs.onStatusChange('disconnected');
       return;
     }
 
-    // Always stop an existing Modbus instance before creating a new one to
-    // prevent duplicate poll timers if _startModbus is called more than once.
     this._stopModbus();
-    this._stopSim();
 
     this.modbus = new ModbusTcpService(
       this.cfg.modbusHost,
@@ -179,7 +150,7 @@ export class ConnectionManager {
           if (this._destroyed) return;
           if ((this.modbus?.consecutiveFails ?? 0) >= FALLBACK_CONFIG.modbusFailuresBeforeSim) {
             this._stopModbus();
-            this._demoteToClientSim();
+            this.cbs.onStatusChange('disconnected');
           }
         },
 
@@ -195,46 +166,18 @@ export class ConnectionManager {
     this.cbs.onStatusChange('connecting');
   }
 
-  // ── Client-simulation tier ──────────────────────────────────────────────────
-
-  private _demoteToClientSim(): void {
-    this._stopModbus();
-    this._stopSim();
-    this._setProtocol('simulation-client');
-    this.simSeq = 0;
-
-    this.simTimer = setInterval(() => {
-      if (this._destroyed) return;
-      // Discard sim readings if WS has recovered while timer was still alive.
-      if (this._protocol === 'websocket') return;
-      const reading = generateSimReading(this.simSeq++);
-      this.health.recordReading(0);
-      this.cbs.onReading(reading, 0, 'simulation-client');
-    }, FALLBACK_CONFIG.simIntervalMs);
-
-    this.cbs.onStatusChange('disconnected');
-  }
-
   // ── Stop helpers ────────────────────────────────────────────────────────────
 
   private _stopAll(): void {
     this.ws?.destroy();
     this.ws = null;
     this._stopModbus();
-    this._stopSim();
     this.health.reset();
   }
 
   private _stopModbus(): void {
     this.modbus?.stop();
     this.modbus = null;
-  }
-
-  private _stopSim(): void {
-    if (this.simTimer !== null) {
-      clearInterval(this.simTimer);
-      this.simTimer = null;
-    }
   }
 
   // ── Protocol update ─────────────────────────────────────────────────────────

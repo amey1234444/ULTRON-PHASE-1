@@ -401,9 +401,8 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
           </Row>
 
           <p className="text-2xs mt-2 mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
-            Switch the backend between its built-in simulator and real GPIO/I2C hardware sensors.
-            Switching to hardware will fail gracefully if the Pi drivers are not available,
-            leaving simulation active.
+            Switch the backend between its built-in data generator and real GPIO/I2C hardware sensors.
+            Switching to hardware will fail gracefully if the Pi drivers are not available.
           </p>
 
           {modeMsg && (
@@ -489,7 +488,6 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
               <option value="lan">LAN / Ethernet</option>
               <option value="wifi">Wi-Fi</option>
               <option value="manual">Manual IP</option>
-              <option value="simulation">Simulation</option>
             </select>
           </Row>
 

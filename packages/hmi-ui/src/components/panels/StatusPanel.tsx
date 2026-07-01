@@ -25,16 +25,12 @@ const Row: React.FC<RowProps> = ({ label, children }) => (
 const PROTOCOL_LABELS: Record<DataProtocol, string> = {
   'websocket':           'WebSocket',
   'modbus':              'Modbus TCP',
-  'simulation-backend':  'Simulation',
-  'simulation-client':   'Sim (offline)',
   'none':                '—',
 };
 
 const PROTOCOL_COLORS: Record<DataProtocol, string> = {
   'websocket':           'var(--ok)',
   'modbus':              'var(--warn)',
-  'simulation-backend':  'var(--warn)',
-  'simulation-client':   'var(--crit)',
   'none':                'var(--text-3)',
 };
 
@@ -183,9 +179,7 @@ export const StatusPanel: React.FC = () => {
             className="text-xs font-mono font-semibold"
             style={{ color: health?.mode === 'simulated' ? 'var(--warn)' : 'var(--ok)' }}
           >
-            {health?.mode?.toUpperCase() ?? (
-              activeProtocol === 'simulation-client' ? 'SIM' : '—'
-            )}
+            {health?.mode?.toUpperCase() ?? '—'}
           </span>
           {health && (
             <button

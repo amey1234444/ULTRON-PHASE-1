@@ -14,7 +14,7 @@ import { AssetSelectionPage }      from '../../pages/AssetSelectionPage';
 import { useAssetHierarchyStore }  from '../../store/assetHierarchyStore';
 import { useDeviceBindingStore }   from '../../store/deviceBindingStore';
 import { useSensorStore }          from '../../store/sensorStore';
-import { useConnectionStore, SIMULATION_CONFIG } from '../../store/connectionStore';
+import { useConnectionStore, DEFAULT_BACKEND_CONFIG } from '../../store/connectionStore';
 
 function phaseToView(phase: string): SidebarView {
   if (phase === 'settings')    return 'settings';
@@ -38,7 +38,7 @@ export const MainLayout: React.FC = () => {
   const appPhase = useAppStore((s) => s.appPhase);
   const selectedEquipmentTypeId = useAssetHierarchyStore((s) => s.selectedEquipmentTypeId);
   const selectedMachineId = useAssetHierarchyStore((s) => s.selectedMachineId);
-  const apiBase = useConnectionStore((s) => s.config?.apiBase) ?? SIMULATION_CONFIG.apiBase;
+  const apiBase = useConnectionStore((s) => s.config?.apiBase) ?? DEFAULT_BACKEND_CONFIG.apiBase;
   const bindings = useDeviceBindingStore((s) => s.bindings);
   const fetchBindings = useDeviceBindingStore((s) => s.fetchBindings);
   const setActiveDevice = useSensorStore((s) => s.setActiveDevice);
@@ -53,15 +53,12 @@ export const MainLayout: React.FC = () => {
 
   useConnectionManager();
 
-  // Keep device bindings fresh so routing knows each machine's machine_id.
   useEffect(() => {
     fetchBindings(apiBase);
     const id = setInterval(() => fetchBindings(apiBase), 4000);
     return () => clearInterval(id);
   }, [apiBase, fetchBindings]);
 
-  // Route the live view to the selected machine's bound device (machine_id).
-  // When the machine has no binding, fall back to the global stream.
   useEffect(() => {
     const boundMachineId = selectedMachineId ? bindings[selectedMachineId]?.machine_id ?? null : null;
     setActiveDevice(boundMachineId);
@@ -105,8 +102,6 @@ export const MainLayout: React.FC = () => {
       {!isMobile && (
         <Sidebar
           collapsed={collapsed}
-          active={activeView}
-          onNavigate={handleNavigate}
           onToggle={() => setCollapsed((c) => !c)}
         />
       )}
@@ -121,8 +116,6 @@ export const MainLayout: React.FC = () => {
           <div className={`sidebar-mobile ${mobileOpen ? 'open' : ''}`}>
             <Sidebar
               collapsed={false}
-              active={activeView}
-              onNavigate={handleNavigate}
               onToggle={() => setMobileOpen(false)}
             />
           </div>
@@ -131,6 +124,8 @@ export const MainLayout: React.FC = () => {
 
       <div className="flex flex-col flex-1 overflow-hidden min-w-0">
         <TopBar
+          activeView={activeView}
+          onNavigate={handleNavigate}
           onAlarmsClick={() => handleNavigate('alarms')}
           onMenuClick={isMobile ? toggleMobile : undefined}
           showMenu={isMobile}

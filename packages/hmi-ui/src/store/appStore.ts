@@ -6,7 +6,6 @@ export type AppPhase =
   | 'splash'       // Startup sequence (backend start → discovery)
   | 'discovery'    // User is manually selecting / searching for a device
   | 'connected'    // Live dashboard with real hardware
-  | 'simulation'   // Live dashboard with simulated data
   | 'settings'     // Settings screen
   | 'diagnostics'; // Diagnostics screen
 
@@ -18,7 +17,6 @@ export type SplashStep =
   | 'searching-subnet'
   | 'checking-modbus'
   | 'device-found'
-  | 'entering-simulation'
   | 'done'
   | 'error';
 

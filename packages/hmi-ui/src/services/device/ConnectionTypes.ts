@@ -7,8 +7,6 @@
 export type DataProtocol =
   | 'websocket'          // WebSocket to Pi (primary)
   | 'modbus'             // Modbus TCP to Pi (fallback)
-  | 'simulation-backend' // Local backend running sim mode
-  | 'simulation-client'  // Client-side generated values (last resort)
   | 'none';
 
 /** High-level connection lifecycle state. */
@@ -18,7 +16,6 @@ export type ConnectionPhase =
   | 'websocket-active'
   | 'connecting-modbus'
   | 'modbus-active'
-  | 'simulation-active'
   | 'disconnected'
   | 'error';
 
