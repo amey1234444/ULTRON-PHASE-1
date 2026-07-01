@@ -1,11 +1,13 @@
 import React from 'react';
 import { useSensorStore }    from '../../store/sensorStore';
 import { useConnectionStore } from '../../store/connectionStore';
-import { useAppStore }       from '../../store/appStore';
 import { useTheme }          from '../../context/ThemeContext';
 import { ClockDisplay }      from '../ui/ClockDisplay';
 import { cn }                from '../../utils/cn';
 import type { DataProtocol } from '../../services/device/ConnectionTypes';
+import type { SidebarView }  from './Sidebar';
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
 
 const SunIcon = () => (
   <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -34,6 +36,8 @@ const MenuIcon = () => (
     <line x1={3} y1={18} x2={21} y2={18} />
   </svg>
 );
+
+// ── Sub-components ────────────────────────────────────────────────────────────
 
 function ConnStatus() {
   const status = useSensorStore((s) => s.connectionStatus);
@@ -66,16 +70,12 @@ function ConnStatus() {
 const PROTOCOL_SHORT: Record<DataProtocol, string> = {
   'websocket':          'WS',
   'modbus':             'MODBUS',
-  'simulation-backend': 'SIM',
-  'simulation-client':  'SIM (OFFLINE)',
-  'none':               '—',
+  'none':               '\u2014',
 };
 
 const PROTOCOL_COLOR: Record<DataProtocol, string> = {
   'websocket':          'var(--ok)',
   'modbus':             'var(--warn)',
-  'simulation-backend': 'var(--warn)',
-  'simulation-client':  'var(--crit)',
   'none':               'var(--text-3)',
 };
 
@@ -83,24 +83,20 @@ const MAX_DISPLAY_LATENCY = 9999;
 
 function DeviceInfo() {
   const config         = useConnectionStore((s) => s.config);
-  const appPhase       = useAppStore((s) => s.appPhase);
   const latencyMs      = useSensorStore((s) => s.latencyMs);
   const activeProtocol = useSensorStore((s) => s.activeDataProtocol);
 
-  const isSim = appPhase === 'simulation' || config?.protocol === 'simulation';
-
   if (!config) return null;
 
-  const sep = <span style={{ color: 'var(--border-hi)' }}>·</span>;
+  const sep = <span style={{ color: 'var(--border-hi)' }}>\u00b7</span>;
 
-  // Cap latency display and show "—" if too high
   const cappedLatency = latencyMs > MAX_DISPLAY_LATENCY ? MAX_DISPLAY_LATENCY : latencyMs;
   const showLatency = activeProtocol === 'websocket';
   const latencyColor =
     cappedLatency === 0  ? 'var(--text-3)' :
     cappedLatency < 50   ? 'var(--ok)'     :
     cappedLatency < 200  ? 'var(--warn)'   : 'var(--crit)';
-  const latencyLabel = cappedLatency === 0 ? '— ms' : `${cappedLatency} ms`;
+  const latencyLabel = cappedLatency === 0 ? '\u2014 ms' : `${cappedLatency} ms`;
 
   const protoLabel = PROTOCOL_SHORT[activeProtocol];
   const protoColor = PROTOCOL_COLOR[activeProtocol];
@@ -110,23 +106,15 @@ function DeviceInfo() {
       <span className="truncate max-w-[140px] hidden md:inline" style={{ color: 'var(--text-2)' }}>
         {config.deviceName}
       </span>
-      {isSim ? (
-        <span className="font-semibold" style={{ color: protoColor }}>
-          {protoLabel}
-        </span>
-      ) : (
+      <span className="hidden lg:inline" style={{ color: 'var(--text-2)' }}>{config.deviceIp}</span>
+      <span className="hidden lg:inline">{sep}</span>
+      <span className="font-semibold" style={{ color: protoColor }}>
+        {protoLabel}
+      </span>
+      {showLatency && (
         <>
-          <span className="hidden lg:inline" style={{ color: 'var(--text-2)' }}>{config.deviceIp}</span>
-          <span className="hidden lg:inline">{sep}</span>
-          <span className="font-semibold" style={{ color: protoColor }}>
-            {protoLabel}
-          </span>
-          {showLatency && (
-            <>
-              {sep}
-              <span style={{ color: latencyColor }}>{latencyLabel}</span>
-            </>
-          )}
+          {sep}
+          <span style={{ color: latencyColor }}>{latencyLabel}</span>
         </>
       )}
     </div>
@@ -166,61 +154,100 @@ function AlarmBadge({ onClick }: { onClick?: () => void }) {
   );
 }
 
-interface TopBarProps {
-  onAlarmsClick?: () => void;
-  onMenuClick?: () => void;
-  showMenu?: boolean;
+// ── Nav tab definitions ───────────────────────────────────────────────────────
+
+interface NavTab {
+  id: SidebarView;
+  label: string;
 }
 
-export const TopBar: React.FC<TopBarProps> = ({ onAlarmsClick, onMenuClick, showMenu }) => {
+const NAV_TABS: NavTab[] = [
+  { id: 'overview',    label: 'Overview' },
+  { id: 'trends',      label: 'Trends' },
+  { id: 'alarms',      label: 'Alarms' },
+  { id: 'devices',     label: 'Devices' },
+  { id: 'monitoring',  label: 'Monitoring' },
+  { id: 'diagnostics', label: 'Diagnostics' },
+  { id: 'maintenance', label: 'Maintenance' },
+  { id: 'reports',     label: 'Reports' },
+  { id: 'settings',    label: 'Settings' },
+];
+
+// ── TopBar component ──────────────────────────────────────────────────────────
+
+interface TopBarProps {
+  activeView?:   SidebarView;
+  onNavigate?:   (v: SidebarView) => void;
+  onAlarmsClick?: () => void;
+  onMenuClick?:  () => void;
+  showMenu?:     boolean;
+}
+
+export const TopBar: React.FC<TopBarProps> = ({ activeView, onNavigate, onAlarmsClick, onMenuClick, showMenu }) => {
   const { theme, toggle } = useTheme();
 
   return (
-    <header
-      className="flex-shrink-0 flex items-center h-12 px-2 sm:px-4 gap-2 sm:gap-4 border-b"
-      style={{ background: 'var(--topbar)', borderColor: 'var(--border)' }}
-    >
-      {/* Hamburger menu (mobile only) */}
-      {showMenu && (
-        <button onClick={onMenuClick} className="hamburger-btn" title="Open menu">
-          <MenuIcon />
-        </button>
-      )}
+    <div className="flex-shrink-0" style={{ background: 'var(--topbar)' }}>
+      {/* Row 1: Status bar */}
+      <header
+        className="flex items-center h-12 px-2 sm:px-4 gap-2 sm:gap-4 border-b"
+        style={{ borderColor: 'var(--border)' }}
+      >
+        {showMenu && (
+          <button onClick={onMenuClick} className="hamburger-btn" title="Open menu">
+            <MenuIcon />
+          </button>
+        )}
 
-      {/* Connection status */}
-      <ConnStatus />
-
-      <div className="h-4 w-px hidden sm:block" style={{ background: 'var(--border-hi)' }} />
-
-      {/* Device info */}
-      <div className="flex-1 min-w-0">
-        <DeviceInfo />
-      </div>
-
-      {/* Right section */}
-      <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-        <AlarmBadge onClick={onAlarmsClick} />
+        <ConnStatus />
 
         <div className="h-4 w-px hidden sm:block" style={{ background: 'var(--border-hi)' }} />
 
-        <div className="hidden sm:block">
-          <ClockDisplay />
+        <div className="flex-1 min-w-0">
+          <DeviceInfo />
         </div>
 
-        <div className="h-4 w-px hidden sm:block" style={{ background: 'var(--border-hi)' }} />
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <AlarmBadge onClick={onAlarmsClick} />
+          <div className="h-4 w-px hidden sm:block" style={{ background: 'var(--border-hi)' }} />
+          <div className="hidden sm:block"><ClockDisplay /></div>
+          <div className="h-4 w-px hidden sm:block" style={{ background: 'var(--border-hi)' }} />
+          <button
+            onClick={toggle}
+            title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            className="flex items-center justify-center w-7 h-7 rounded transition-colors"
+            style={{ color: 'var(--text-2)' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
+          >
+            {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
+      </header>
 
-        {/* Theme toggle */}
-        <button
-          onClick={toggle}
-          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-          className="flex items-center justify-center w-7 h-7 rounded transition-colors"
-          style={{ color: 'var(--text-2)' }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text)'; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
+      {/* Row 2: Navigation tabs */}
+      {onNavigate && (
+        <nav
+          className="flex items-center h-10 px-2 sm:px-4 gap-1 border-b overflow-x-auto scrollbar-hide"
+          style={{ borderColor: 'var(--border)' }}
         >
-          {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-        </button>
-      </div>
-    </header>
+          {NAV_TABS.map((tab) => {
+            const isActive = activeView === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => onNavigate(tab.id)}
+                className={cn(
+                  'nav-tab',
+                  isActive && 'nav-tab-active',
+                )}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
+    </div>
   );
 };

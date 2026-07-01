@@ -5,7 +5,7 @@
  * lifetime of the dashboard layout.
  *
  * Replaces the simpler useWebSocket hook.  Handles:
- *   WS (primary) → Modbus TCP (fallback) → Client-side Simulation (last resort)
+ *   WS (primary) → Modbus TCP (fallback)
  *
  * Stores results in Zustand (sensorStore + connectionStore) so every
  * component can subscribe with fine-grained selectors.
@@ -36,19 +36,12 @@ export function useConnectionManager(): void {
   useEffect(() => {
     if (!config) return;
 
-    // Determine whether Modbus is sensible for this session.
-    // Skip it in simulation mode (no Pi IP, local backend only).
-    const simOnly =
-      config.protocol === 'simulation' ||
-      config.deviceIp === 'localhost';
-
     const manager = new ConnectionManager(
       {
         wsUrl:      config.wsUrl,
         modbusHost: config.deviceIp,
         modbusPort: config.modbusPort,
         slaveId:    1,
-        simOnly:    simOnly || !platform.readModbusTcp,
         readModbusTcp: platform.readModbusTcp,
       },
       {

@@ -25,7 +25,7 @@ function toPanelStatus(s: SensorStatus): PanelStatus {
 }
 
 function protocolLabel(proto: string | undefined): string {
-  const map: Record<string, string> = { simulation: 'SIM', lan: 'LAN', wifi: 'WiFi', manual: 'TCP' };
+  const map: Record<string, string> = { lan: 'LAN', wifi: 'WiFi', manual: 'TCP' };
   return proto ? (map[proto] ?? proto.toUpperCase()) : 'Offline';
 }
 

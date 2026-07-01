@@ -1,5 +1,4 @@
 import React from 'react';
-import { useAppStore }             from '../store/appStore';
 import { useHistoricalReadings }   from '../hooks/useHistoricalReadings';
 import { PressureCard }            from '../components/cards/PressureCard';
 import { TemperatureCard }         from '../components/cards/TemperatureCard';
@@ -12,25 +11,12 @@ interface Props {
   alarmsOnly?: boolean;
 }
 
-function SimBanner() {
-  return (
-    <div className="sim-banner">
-      <span className="status-dot animate-status-pulse" style={{ background: 'var(--warn)' }} />
-      Simulation Mode — No hardware connected
-    </div>
-  );
-}
-
 export const DashboardPage: React.FC<Props> = ({ alarmsOnly }) => {
-  const appPhase = useAppStore((s) => s.appPhase);
-  const isSim    = appPhase === 'simulation';
-
   const trendReadings = useHistoricalReadings(30);
 
   if (alarmsOnly) {
     return (
       <div className="flex flex-col h-full">
-        {isSim && <SimBanner />}
         <div className="flex-1 overflow-auto p-2 sm:p-4"><AlarmPanel /></div>
       </div>
     );
@@ -38,8 +24,6 @@ export const DashboardPage: React.FC<Props> = ({ alarmsOnly }) => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {isSim && <SimBanner />}
-
       <div className="flex flex-col flex-1 min-h-0 p-2 sm:p-3 gap-2 sm:gap-3">
 
         {/* Row 1 — metric cards */}

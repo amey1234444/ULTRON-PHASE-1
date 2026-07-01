@@ -101,16 +101,6 @@ export const Header: React.FC<HeaderProps> = ({ onSettings, onDiagnostics }) => 
         <div className="flex-1 flex items-center gap-3 sm:gap-4 overflow-hidden">
           <HealthPill />
 
-          {/* Simulation banner */}
-          {appPhase === 'simulation' && (
-            <>
-              <Divider />
-              <span className="text-[9px] font-bold tracking-[0.25em] text-c-warn bg-c-warn/10 px-2 py-1 rounded-full border border-c-warn/30">
-                SIMULATION
-              </span>
-            </>
-          )}
-
           {device && (
             <>
               <Divider />
