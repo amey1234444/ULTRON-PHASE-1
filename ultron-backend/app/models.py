@@ -24,6 +24,9 @@ class SensorReading(BaseModel):
     pressure: float = Field(..., ge=0.0, description="Pressure in bar")
     temperature: float = Field(..., description="Temperature in °C")
     status: SystemStatus = Field(default=SystemStatus.HEALTHY)
+    machine_id: Optional[str] = Field(default=None, description="Machine ID the reading belongs to (bridge routing)")
+    device_id: Optional[str] = Field(default=None, description="Matched asset node id (bridge routing)")
+    source: Optional[str] = Field(default=None, description="'bridge' for ULTRON bridge readings")
 
     model_config = {"json_encoders": {datetime: lambda v: v.isoformat()}}
 
@@ -31,7 +34,7 @@ class SensorReading(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     uptime_seconds: float
-    mode: str  # "simulated" | "hardware"
+    mode: str  # "bridge" | "hardware"
     version: str
 
 
@@ -93,6 +96,7 @@ class SensorHistoryItem(BaseModel):
     pressure: float
     temperature: Optional[float]
     status: str
+    source: Optional[str] = None
 
 
 class SensorHistoryResponse(BaseModel):
@@ -101,15 +105,68 @@ class SensorHistoryResponse(BaseModel):
     readings: list[SensorHistoryItem]
 
 
-class ModeChangeRequest(BaseModel):
-    """Request body for POST /api/control/mode."""
+# ---------------------------------------------------------------------------
+# Bridge registration models
+# ---------------------------------------------------------------------------
 
-    simulated: bool = Field(..., description="true = simulation mode, false = hardware mode")
+class BridgeRegisterRequest(BaseModel):
+    """Request body for POST /api/bridges/register."""
+
+    url: str = Field(..., description="Bridge URL (e.g. http://192.168.1.100:8765)")
+    equipment_type_id: str = Field(default="", description="Equipment type node ID to associate bridge with")
 
 
-class ModeChangeResponse(BaseModel):
-    """Response from POST /api/control/mode."""
+class BridgeRegisterResponse(BaseModel):
+    """Response from POST /api/bridges/register."""
 
-    success:  bool   = Field(..., description="True if the mode was changed successfully")
-    mode:     str    = Field(..., description="Active mode after this request: 'simulated' or 'hardware'")
-    message:  str    = Field(..., description="Human-readable result message")
+    success: bool
+    bridge_id: str
+    url: str
+    message: str
+
+
+class BridgeListResponse(BaseModel):
+    """Response from GET /api/bridges."""
+
+    count: int
+    bridges: list[dict]
+
+
+class BridgeIngestRequest(BaseModel):
+    """
+    Request body for POST /api/bridges/ingest (push model).
+
+    A bridge running on a private LAN POSTs its readings here so the backend
+    receives data without having to reach back into the bridge's network.
+    Extra fields (e.g. fault, mode, pressureBar) are preserved and forwarded
+    to the same normalization path used for polled bridges.
+    """
+
+    model_config = {"extra": "allow"}
+
+    source: Optional[str] = Field(
+        default=None,
+        description="Stable identifier for this bridge (machine_id, hostname, etc.)",
+    )
+    machine_id: Optional[str] = Field(
+        default=None,
+        description="Machine ID used to route this reading to a device binding",
+    )
+    ip: Optional[str] = Field(
+        default=None,
+        description="Bridge's own (LAN) IP, matched against the device binding",
+    )
+    port: Optional[int] = Field(
+        default=None,
+        description="Bridge's port (informational; stored on the binding)",
+    )
+    pressure: Optional[float] = None
+    temperature: Optional[float] = None
+
+
+class BridgeIngestResponse(BaseModel):
+    """Response from POST /api/bridges/ingest."""
+
+    success: bool
+    bridge_id: str
+    message: str

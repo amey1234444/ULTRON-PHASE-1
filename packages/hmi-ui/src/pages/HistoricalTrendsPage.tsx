@@ -3,7 +3,6 @@ import { MultiTrendChart }    from '../components/charts/MultiTrendChart';
 import { TrendChart }         from '../components/charts/TrendChart';
 import { useConnectionStore } from '../store/connectionStore';
 import { useSensorStore }     from '../store/sensorStore';
-import { useAppStore }        from '../store/appStore';
 import { useToastStore }      from '../store/toastStore';
 import type { SensorReading } from '../types/sensor';
 
@@ -89,9 +88,7 @@ function StatCard({ label, value, unit, color, sub }: StatProps) {
 export const HistoricalTrendsPage: React.FC = () => {
   const apiBase       = useConnectionStore((s) => s.config?.apiBase ?? 'http://localhost:8000');
   const storeReadings = useSensorStore((s) => s.readings);
-  const appPhase      = useAppStore((s) => s.appPhase);
   const push          = useToastStore((s) => s.push);
-  const isSim         = appPhase === 'simulation';
 
   const [preset,     setPreset]     = useState<PresetMinutes>(60);
   const [loading,    setLoading]    = useState(false);
@@ -102,9 +99,10 @@ export const HistoricalTrendsPage: React.FC = () => {
   const [viewMode,   setViewMode]   = useState<ViewMode>('combined');
 
   const allReadings = useMemo<SensorReading[]>(() => {
-    if (!dbReadings.length) return storeReadings;
+    const liveBridgeReadings = storeReadings.filter((r) => r.source === 'bridge');
+    if (!dbReadings.length) return liveBridgeReadings;
     const cutoff    = dbReadings[dbReadings.length - 1]?.timestamp ?? '';
-    const liveTail  = storeReadings.filter((r) => r.timestamp > cutoff);
+    const liveTail  = liveBridgeReadings.filter((r) => r.timestamp > cutoff);
     const merged    = [...dbReadings, ...liveTail];
     return merged.length > 50_000 ? merged.slice(-50_000) : merged;
   }, [dbReadings, storeReadings]);
@@ -129,7 +127,7 @@ export const HistoricalTrendsPage: React.FC = () => {
           total_stored: number;
           readings: SensorReading[];
         } = await res.json();
-        setDbReadings([...data.readings].reverse());
+        setDbReadings(data.readings.filter((r) => r.source === 'bridge').reverse());
         setDbCount(data.count);
         setTotalStored(data.total_stored);
       } catch (e) {
@@ -169,22 +167,15 @@ export const HistoricalTrendsPage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
-      {/* Sim banner */}
-      {isSim && (
-        <div className="sim-banner">
-          <span className="status-dot animate-status-pulse" style={{ background: 'var(--warn)' }} />
-          Simulation Mode — No hardware connected
-        </div>
-      )}
-
       {/* ── Toolbar ─────────────────────────────────────────────────────────── */}
       <div
         className="flex-shrink-0"
         style={{
           display: 'flex',
+          flexWrap: 'wrap',
           alignItems: 'center',
           gap: 8,
-          padding: '10px 16px',
+          padding: '10px 12px',
           borderBottom: '1px solid var(--border)',
           background: 'var(--panel)',
         }}
@@ -310,7 +301,7 @@ export const HistoricalTrendsPage: React.FC = () => {
       {stats && (
         <div
           className="flex-shrink-0 animate-fade-in"
-          style={{ display: 'flex', gap: 10, padding: '10px 16px', background: 'var(--surface)' }}
+          style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10, padding: '10px 12px', background: 'var(--surface)' }}
         >
           <StatCard
             label="Pressure (latest)"
@@ -346,18 +337,18 @@ export const HistoricalTrendsPage: React.FC = () => {
       {/* ── Charts Area ─────────────────────────────────────────────────────── */}
       <div
         className="flex-1 overflow-auto"
-        style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}
+        style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: 12 }}
       >
         {viewMode === 'combined' ? (
-          <div style={{ flex: 1, minHeight: 400 }}>
+          <div style={{ flex: 1, minHeight: 250 }}>
             <MultiTrendChart readings={allReadings} historical={isHistorical} />
           </div>
         ) : (
           <>
-            <div style={{ flex: 1, minHeight: 280 }}>
+            <div style={{ flex: 1, minHeight: 200 }}>
               <TrendChart type="pressure" readings={allReadings} />
             </div>
-            <div style={{ flex: 1, minHeight: 280 }}>
+            <div style={{ flex: 1, minHeight: 200 }}>
               <TrendChart type="temperature" readings={allReadings} />
             </div>
           </>

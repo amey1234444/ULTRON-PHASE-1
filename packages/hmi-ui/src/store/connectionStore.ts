@@ -3,7 +3,7 @@ import { DEFAULT_MACHINE_ID } from '../services/device/DeviceIdentity';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ConnectionProtocol = 'lan' | 'wifi' | 'manual' | 'simulation';
+export type ConnectionProtocol = 'lan' | 'wifi' | 'manual';
 
 export interface ConnectionConfig {
   apiBase:    string;
@@ -21,22 +21,33 @@ export interface ConnectionConfig {
 interface ConnectionStore {
   config:          ConnectionConfig | null;
   setConfig:       (cfg: ConnectionConfig) => void;
-  enterSimulation: ()                      => void;
   clearConfig:     ()                      => void;
 }
 
-export const SIMULATION_CONFIG: ConnectionConfig = {
-  apiBase:    'http://localhost:8000',
-  wsUrl:      'ws://localhost:8000/ws',
-  deviceName: 'ULTRON Edge (Simulated)',
+const ENV_API_BASE = typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE
+  ? import.meta.env.VITE_API_BASE
+  : 'http://localhost:8000';
+
+const ENV_WS_URL = typeof import.meta !== 'undefined' && import.meta.env?.VITE_WS_URL
+  ? import.meta.env.VITE_WS_URL
+  : ENV_API_BASE.replace(/^http/, 'ws') + '/ws';
+
+/** Default backend config — used when no live device has been configured yet. */
+export const DEFAULT_BACKEND_CONFIG: ConnectionConfig = {
+  apiBase:    ENV_API_BASE,
+  wsUrl:      ENV_WS_URL,
+  deviceName: 'ULTRON Backend',
   deviceIp:   'localhost',
-  deviceType: 'simulation',
+  deviceType: 'backend',
   machineId:  DEFAULT_MACHINE_ID,
-  protocol:   'simulation',
+  protocol:   'manual',
   modbusPort: 5020,
   version:    '1.0.0',
   lastSeen:   0,
 };
+
+/** @deprecated alias — use DEFAULT_BACKEND_CONFIG instead */
+export const SIMULATION_CONFIG = DEFAULT_BACKEND_CONFIG;
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -44,9 +55,6 @@ export const useConnectionStore = create<ConnectionStore>((set) => ({
   config: null,
 
   setConfig: (config) => set({ config }),
-
-  enterSimulation: () =>
-    set({ config: { ...SIMULATION_CONFIG, lastSeen: Date.now() } }),
 
   clearConfig: () => set({ config: null }),
 }));

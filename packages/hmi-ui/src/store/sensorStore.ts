@@ -35,10 +35,15 @@ interface SensorStore {
   alarms:             AlarmState;
   latencyMs:          number;
   activeDataProtocol: DataProtocol;
+  /** Per-device reading history, keyed by machine_id (bridge routing). */
+  byDevice:           Record<string, SensorReading[]>;
+  /** When set, only readings with this machine_id drive the active view. */
+  activeMachineId:    string | null;
 
   addReading:           (r: SensorReading, latencyMs?: number, protocol?: DataProtocol) => void;
   setConnectionStatus:  (s: ConnectionStatus)  => void;
   setActiveProtocol:    (p: DataProtocol)       => void;
+  setActiveDevice:      (machineId: string | null) => void;
   incrementReconnect:   ()                      => void;
   reset:                ()                      => void;
 }
@@ -54,6 +59,23 @@ const defaultAlarms: AlarmState = {
   hhTemperature: false,
 };
 
+/** Pure alarm evaluation against the current thresholds (no side effects). */
+function computeAlarms(reading: SensorReading): AlarmState {
+  const pt = useThresholdStore.getState().pressure;
+  const tt = useThresholdStore.getState().temperature;
+  const t = reading.temperature;
+  return {
+    llPressure:    reading.pressure <= pt.ll,
+    lPressure:     reading.pressure <= pt.l && reading.pressure > pt.ll,
+    hPressure:     reading.pressure >= pt.h  && reading.pressure < pt.hh,
+    hhPressure:    reading.pressure >= pt.hh,
+    llTemperature: t !== null && t <= tt.ll,
+    lTemperature:  t !== null && t <= tt.l && t > tt.ll,
+    hTemperature:  t !== null && t >= tt.h  && t < tt.hh,
+    hhTemperature: t !== null && t >= tt.hh,
+  };
+}
+
 export const useSensorStore = create<SensorStore>((set) => ({
   readings:           [],
   latest:             null,
@@ -64,27 +86,40 @@ export const useSensorStore = create<SensorStore>((set) => ({
   alarms:             { ...defaultAlarms },
   latencyMs:          0,
   activeDataProtocol: 'none',
+  byDevice:           {},
+  activeMachineId:    null,
 
   addReading: (reading, latencyMs, protocol) =>
     set((state) => {
+      if (reading.source !== 'bridge') {
+        return {};
+      }
+
+      // Bucket every reading by its machine_id so each device keeps its own
+      // history regardless of which device is currently being viewed.
+      let byDevice = state.byDevice;
+      const mid = reading.machine_id;
+      if (mid) {
+        const prev = state.byDevice[mid] ?? [];
+        const bucket = prev.length >= MAX_HISTORY
+          ? [...prev.slice(-(MAX_HISTORY - 1)), reading]
+          : [...prev, reading];
+        byDevice = { ...state.byDevice, [mid]: bucket };
+      }
+
+      // When a device is selected, only its readings drive the active view.
+      // When none is selected, fall back to the legacy global behavior so the
+      // simulator / single-device setups keep working unchanged.
+      if (state.activeMachineId !== null && mid !== state.activeMachineId) {
+        return { byDevice };
+      }
+
       const next = state.readings.length >= MAX_HISTORY
         ? [...state.readings.slice(-(MAX_HISTORY - 1)), reading]
         : [...state.readings, reading];
 
-      const pt = useThresholdStore.getState().pressure;
-      const tt = useThresholdStore.getState().temperature;
-
       const t = reading.temperature;
-      const newAlarms: AlarmState = {
-        llPressure:    reading.pressure <= pt.ll,
-        lPressure:     reading.pressure <= pt.l && reading.pressure > pt.ll,
-        hPressure:     reading.pressure >= pt.h  && reading.pressure < pt.hh,
-        hhPressure:    reading.pressure >= pt.hh,
-        llTemperature: t !== null && t <= tt.ll,
-        lTemperature:  t !== null && t <= tt.l && t > tt.ll,
-        hTemperature:  t !== null && t >= tt.h  && t < tt.hh,
-        hhTemperature: t !== null && t >= tt.hh,
-      };
+      const newAlarms: AlarmState = computeAlarms(reading);
 
       // Detect alarm state transitions and emit events + toasts
       const prevAlarms  = state.alarms;
@@ -122,6 +157,7 @@ export const useSensorStore = create<SensorStore>((set) => ({
         healthScore:        computeHealthScore(reading.pressure, t),
         latencyMs:          latencyMs ?? state.latencyMs,
         activeDataProtocol: protocol  ?? state.activeDataProtocol,
+        byDevice,
       };
     }),
 
@@ -133,6 +169,21 @@ export const useSensorStore = create<SensorStore>((set) => ({
 
   setActiveProtocol: (activeDataProtocol) => set({ activeDataProtocol }),
 
+  setActiveDevice: (machineId) =>
+    set((state) => {
+      if (machineId === state.activeMachineId) return {};
+      // Rehydrate the active view from the selected device's bucket.
+      const bucket = machineId ? (state.byDevice[machineId] ?? []) : state.readings;
+      const latest = bucket.length ? bucket[bucket.length - 1] : null;
+      return {
+        activeMachineId: machineId,
+        readings: machineId ? bucket : state.readings,
+        latest: machineId ? latest : state.latest,
+        alarms: latest ? computeAlarms(latest) : { ...defaultAlarms },
+        healthScore: latest ? computeHealthScore(latest.pressure, latest.temperature) : 100,
+      };
+    }),
+
   incrementReconnect: () =>
     set((state) => ({ reconnectCount: state.reconnectCount + 1 })),
 
@@ -142,5 +193,6 @@ export const useSensorStore = create<SensorStore>((set) => ({
       connectionStatus: 'disconnected', connectedAt: null,
       reconnectCount: 0, alarms: { ...defaultAlarms },
       latencyMs: 0, activeDataProtocol: 'none',
+      byDevice: {}, activeMachineId: null,
     }),
 }));

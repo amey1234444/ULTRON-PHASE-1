@@ -2,30 +2,30 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── CSS Custom Properties — Dark Theme (default) ─────────────────────────── */
+/* ── CSS Custom Properties — Dark Theme (Gigaton-style) ───────────────────── */
 :root {
-  /* Navy-steel industrial palette */
-  --surface:     #060C18;
-  --panel:       #0C1A28;
-  --panel-alt:   #122233;
-  --border:      #1A3048;
-  --border-hi:   #2A4A6A;
-  --text:        #CDE4F8;
-  --text-2:      #6AAED0;
-  --text-3:      #3A5E7A;
-  --accent:      #38A0FF;
-  --accent-dim:  rgba(56,160,255,0.16);
-  --ok:          #20D068;
-  --warn:        #FFB020;
-  --crit:        #FF4040;
-  --info:        #38A0FF;
-  --ok-dim:      rgba(32,208,104,0.15);
-  --warn-dim:    rgba(255,176,32,0.15);
-  --crit-dim:    rgba(255,64,64,0.15);
-  --sidebar:     #040810;
-  --topbar:      #0C1A28;
-  --panel-shadow: 0 2px 12px rgba(0,0,0,0.4);
-  --card-hover-glow: rgba(56,160,255,0.06);
+  /* Dark industrial palette with green accent */
+  --surface:     #0f1419;
+  --panel:       #1a1f2e;
+  --panel-alt:   #141922;
+  --border:      rgba(55, 65, 81, 0.5);
+  --border-hi:   rgba(75, 85, 99, 0.7);
+  --text:        #f1f5f9;
+  --text-2:      #94a3b8;
+  --text-3:      #64748b;
+  --accent:      #00d084;
+  --accent-dim:  rgba(0,208,132,0.16);
+  --ok:          #22c55e;
+  --warn:        #eab308;
+  --crit:        #ef4444;
+  --info:        #3b82f6;
+  --ok-dim:      rgba(34,197,94,0.15);
+  --warn-dim:    rgba(234,179,8,0.15);
+  --crit-dim:    rgba(239,68,68,0.15);
+  --sidebar:     #0a0f14;
+  --topbar:      #1a1f2e;
+  --panel-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  --card-hover-glow: rgba(0,208,132,0.06);
   color-scheme: dark;
 }
 
@@ -248,21 +248,95 @@ input, textarea, select, .selectable { user-select: text; }
   background: var(--panel);
 }
 
-/* ── Simulation banner ─────────────────────────────────────────────────────── */
-.sim-banner {
+/* ── Navigation tabs (top bar) ─────────────────────────────────────────────── */
+.nav-tab {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.75rem;
+  height: 100%;
+  font-size: 0.7rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  color: var(--text-3);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all 150ms ease;
+  white-space: nowrap;
+}
+.nav-tab:hover {
+  color: var(--text);
+  background: rgba(255,255,255,0.03);
+}
+.nav-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.topbar-nav-row {
+  min-height: 42px;
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.5rem;
-  padding: 0.4rem 1rem;
-  font-size: 0.65rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.nav-select-wrap {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.nav-select-label {
   flex-shrink: 0;
-  background: var(--warn-dim);
-  border-bottom: 1px solid var(--warn);
-  color: var(--warn);
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.nav-select {
+  min-width: 0;
+  width: 13rem;
+  max-width: 42vw;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  padding: 0 1.8rem 0 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  outline: none;
+}
+.nav-select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+@media (max-width: 640px) {
+  .topbar-nav-row {
+    align-items: stretch;
+    gap: 0.4rem;
+  }
+  .nav-select-wrap {
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.2rem;
+  }
+  .nav-select {
+    width: 100%;
+    max-width: none;
+  }
+}
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 /* ── Footer bar ────────────────────────────────────────────────────────────── */
@@ -278,4 +352,78 @@ input, textarea, select, .selectable { user-select: text; }
   color: var(--text-3);
   background: var(--panel);
   letter-spacing: 0.04em;
+}
+@media (max-width: 640px) {
+  .app-footer {
+    flex-direction: column;
+    gap: 2px;
+    padding: 0.3rem 0.5rem;
+    font-size: 0.55rem;
+    text-align: center;
+  }
+}
+
+/* ── Responsive utilities ──────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .scada-panel-header {
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* ── Mobile sidebar overlay ────────────────────────────────────────────────── */
+.sidebar-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms ease;
+}
+.sidebar-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-mobile {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 50;
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+  width: 260px;
+}
+.sidebar-mobile.open {
+  transform: translateX(0);
+}
+
+/* ── Hamburger button ──────────────────────────────────────────────────────── */
+.hamburger-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  flex-shrink: 0;
+  transition: background 150ms ease, color 150ms ease;
+}
+.hamburger-btn:hover {
+  background: var(--panel-alt);
+  color: var(--text);
+}
+@media (max-width: 768px) {
+  .hamburger-btn {
+    display: flex;
+  }
 }

@@ -101,16 +101,6 @@ export const Header: React.FC<HeaderProps> = ({ onSettings, onDiagnostics }) => 
         <div className="flex-1 flex items-center gap-3 sm:gap-4 overflow-hidden">
           <HealthPill />
 
-          {/* Simulation banner */}
-          {appPhase === 'simulation' && (
-            <>
-              <Divider />
-              <span className="text-[9px] font-bold tracking-[0.25em] text-c-warn bg-c-warn/10 px-2 py-1 rounded-full border border-c-warn/30">
-                SIMULATION
-              </span>
-            </>
-          )}
-
           {device && (
             <>
               <Divider />
@@ -121,8 +111,7 @@ export const Header: React.FC<HeaderProps> = ({ onSettings, onDiagnostics }) => 
               <Divider />
               <div className="hidden lg:flex items-center gap-1.5 text-[9px]">
                 <span className="text-c-mid tracking-widest">MODE</span>
-                <span className={cn('font-bold tracking-[0.18em]',
-                  device.mode === 'simulated' ? 'text-c-warn' : 'text-c-ok')}>
+                <span className={cn('font-bold tracking-[0.18em] text-c-ok')}>
                   {device.mode.toUpperCase()}
                 </span>
               </div>

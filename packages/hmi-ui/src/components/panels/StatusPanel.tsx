@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useSensorStore }        from '../../store/sensorStore';
-import { useHealth, useSetMode } from '../../hooks/useDeviceInfo';
+import { useHealth }             from '../../hooks/useDeviceInfo';
 import { useConnectionStore }    from '../../store/connectionStore';
 import { Panel }                 from '../ui/Panel';
 import { formatTimestamp, formatUptime } from '../../utils/formatters';
 import type { DataProtocol }     from '../../services/device/ConnectionTypes';
 import { DEFAULT_MACHINE_ID }    from '../../services/device/DeviceIdentity';
 
-// ── Sub-components ────────────────────────────────────────────────────────────
+// â”€â”€ Sub-components â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface RowProps { label: string; children: React.ReactNode }
 const Row: React.FC<RowProps> = ({ label, children }) => (
@@ -20,21 +20,17 @@ const Row: React.FC<RowProps> = ({ label, children }) => (
   </div>
 );
 
-// Protocol badge ─────────────────────────────────────────────────────────────
+// Protocol badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const PROTOCOL_LABELS: Record<DataProtocol, string> = {
   'websocket':           'WebSocket',
   'modbus':              'Modbus TCP',
-  'simulation-backend':  'Simulation',
-  'simulation-client':   'Sim (offline)',
-  'none':                '—',
+  'none':                'â€”',
 };
 
 const PROTOCOL_COLORS: Record<DataProtocol, string> = {
   'websocket':           'var(--ok)',
   'modbus':              'var(--warn)',
-  'simulation-backend':  'var(--warn)',
-  'simulation-client':   'var(--crit)',
   'none':                'var(--text-3)',
 };
 
@@ -48,7 +44,7 @@ function ProtocolBadge({ protocol }: { protocol: DataProtocol }) {
   );
 }
 
-// Connection status badge ─────────────────────────────────────────────────────
+// Connection status badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; color: string }> = {
@@ -61,18 +57,18 @@ function StatusBadge({ status }: { status: string }) {
   return <span className="font-semibold tracking-widest" style={{ color }}>{label}</span>;
 }
 
-// Latency display ─────────────────────────────────────────────────────────────
+// Latency display â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function LatencyDisplay({ ms }: { ms: number }) {
   const color =
     ms === 0    ? 'var(--text-3)' :
     ms < 50     ? 'var(--ok)'     :
     ms < 200    ? 'var(--warn)'   : 'var(--crit)';
-  const label = ms === 0 ? '—' : `${ms} ms`;
+  const label = ms === 0 ? 'â€”' : `${ms} ms`;
   return <span style={{ color }}>{label}</span>;
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// â”€â”€ Main component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export const StatusPanel: React.FC = () => {
   const connectionStatus  = useSensorStore((s) => s.connectionStatus);
@@ -84,8 +80,6 @@ export const StatusPanel: React.FC = () => {
   const activeProtocol    = useSensorStore((s) => s.activeDataProtocol);
   const config            = useConnectionStore((s) => s.config);
   const { data: health }  = useHealth();
-  const setMode           = useSetMode();
-  const [modeErr, setModeErr] = useState<string | null>(null);
 
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -93,17 +87,6 @@ export const StatusPanel: React.FC = () => {
     return () => clearInterval(t);
   }, []);
 
-  const handleModeToggle = async () => {
-    if (!health) return;
-    const next = health.mode === 'simulated';  // toggle: sim → hw, hw → sim
-    try {
-      const res = await setMode.mutateAsync(!next);
-      if (!res.success) setModeErr(res.message);
-    } catch (err) {
-      setModeErr(err instanceof Error ? err.message : 'Request failed');
-    }
-    setTimeout(() => setModeErr(null), 4000);
-  };
 
   const sessionUptime = connectedAt ? formatUptime((now - connectedAt) / 1000) : '--:--:--';
 
@@ -125,7 +108,7 @@ export const StatusPanel: React.FC = () => {
 
       {/* Device name */}
       <Row label="Device">
-        <span className="truncate max-w-[160px]">{config?.deviceName ?? '—'}</span>
+        <span className="truncate max-w-[160px]">{config?.deviceName ?? 'â€”'}</span>
       </Row>
 
       {/* Machine ID */}
@@ -137,7 +120,7 @@ export const StatusPanel: React.FC = () => {
       <Row label="IP Address">
         {config?.deviceIp
           ? <span style={{ color: 'var(--text-2)' }}>{config.deviceIp}</span>
-          : <span style={{ color: 'var(--text-3)' }}>—</span>}
+          : <span style={{ color: 'var(--text-3)' }}>â€”</span>}
       </Row>
 
       {/* Latency */}
@@ -148,7 +131,7 @@ export const StatusPanel: React.FC = () => {
       {/* Last update */}
       <Row label="Last Update">
         <span style={{ color: 'var(--text-2)' }}>
-          {latest ? formatTimestamp(latest.timestamp) : '—'}
+          {latest ? formatTimestamp(latest.timestamp) : 'â€”'}
         </span>
       </Row>
 
@@ -169,50 +152,15 @@ export const StatusPanel: React.FC = () => {
 
       {/* System uptime from backend health */}
       <Row label="System Up">
-        {health ? formatUptime(health.uptime_seconds) : '—'}
+        {health ? formatUptime(health.uptime_seconds) : 'â€”'}
       </Row>
 
-      {/* Backend mode + toggle */}
-      <div className="flex items-center justify-between py-2 border-b last:border-0"
-        style={{ borderColor: 'var(--border)' }}>
-        <span className="text-2xs font-semibold tracking-widest uppercase" style={{ color: 'var(--text-3)' }}>
-          Mode
+      <Row label="Backend Source">
+        <span className="font-semibold tracking-widest" style={{ color: 'var(--ok)' }}>
+          {health?.mode === 'hardware' ? 'BRIDGE + HARDWARE' : 'BRIDGE'}
         </span>
-        <div className="flex items-center gap-2">
-          <span
-            className="text-xs font-mono font-semibold"
-            style={{ color: health?.mode === 'simulated' ? 'var(--warn)' : 'var(--ok)' }}
-          >
-            {health?.mode?.toUpperCase() ?? (
-              activeProtocol === 'simulation-client' ? 'SIM' : '—'
-            )}
-          </span>
-          {health && (
-            <button
-              onClick={() => { void handleModeToggle(); }}
-              disabled={setMode.isPending}
-              title={health.mode === 'simulated' ? 'Switch to hardware sensors' : 'Switch to simulation'}
-              className="text-2xs px-1.5 py-0.5 rounded transition-colors disabled:opacity-40"
-              style={{
-                background: 'var(--panel-alt)',
-                border: '1px solid var(--border-hi)',
-                color: 'var(--text-2)',
-              }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--accent)'; (e.currentTarget as HTMLElement).style.color = 'var(--accent)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--border-hi)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
-            >
-              {setMode.isPending ? '…' : health.mode === 'simulated' ? 'HW' : 'SIM'}
-            </button>
-          )}
-        </div>
-      </div>
+      </Row>
 
-      {modeErr && (
-        <div className="mt-2 rounded px-2 py-1.5 text-2xs"
-          style={{ background: 'var(--warn-dim)', border: '1px solid var(--warn)', color: 'var(--warn)' }}>
-          {modeErr}
-        </div>
-      )}
     </Panel>
   );
 };

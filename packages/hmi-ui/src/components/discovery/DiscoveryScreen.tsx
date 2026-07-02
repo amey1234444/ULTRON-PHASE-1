@@ -5,7 +5,7 @@ import { ManualConnect }      from './ManualConnect';
 import type { TauriDeviceInfo } from '../../types/tauri';
 
 export const DiscoveryScreen: React.FC = () => {
-  const { state, progress, devices, connectTo, enterSimulation, retry } = useDeviceDiscovery();
+  const { state, progress, devices, connectTo, retry } = useDeviceDiscovery();
   const [showManual, setShowManual] = useState(false);
 
   const isScanning   = state === 'idle' || state === 'checking-cache' || state === 'probing';
@@ -52,8 +52,6 @@ export const DiscoveryScreen: React.FC = () => {
                 <div className="flex gap-4 mt-1">
                   <button onClick={() => setShowManual(true)} className="text-xs underline underline-offset-2"
                     style={{ color: 'var(--text-3)' }}>Enter IP manually</button>
-                  <button onClick={enterSimulation} className="text-xs underline underline-offset-2"
-                    style={{ color: 'var(--text-3)' }}>Use simulation</button>
                 </div>
               )}
             </div>
@@ -99,10 +97,6 @@ export const DiscoveryScreen: React.FC = () => {
                   style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
                   Enter IP Address
                 </button>
-                <button onClick={enterSimulation} className="w-full text-sm py-1 transition-colors"
-                  style={{ color: 'var(--text-3)' }}>
-                  Simulation Mode
-                </button>
               </div>
             </div>
           )}
@@ -115,9 +109,6 @@ export const DiscoveryScreen: React.FC = () => {
                 <button onClick={retry} className="w-full rounded px-4 py-2 text-sm font-semibold"
                   style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)', color: 'var(--text-2)' }}>
                   ← Auto-Search
-                </button>
-                <button onClick={enterSimulation} className="w-full text-sm py-1" style={{ color: 'var(--text-3)' }}>
-                  Simulation Mode
                 </button>
               </div>
             </div>

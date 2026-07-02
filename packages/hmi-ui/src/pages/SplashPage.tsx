@@ -6,13 +6,17 @@ import type { TauriDeviceInfo } from '../types/tauri';
 
 type StartupPhase = 'init' | 'loading-settings' | 'starting-backend' | 'backend-ok' | 'discovering' | 'found' | 'not-found' | 'error';
 
+// Backend URL configured at build time (set for the hosted Vercel deployment).
+// When present, the app connects only to this backend; no local discovery.
+const CLOUD_API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '';
+
 const MESSAGES: Record<StartupPhase, string> = {
-  'init':              'Initializing ULTRON…',
-  'loading-settings':  'Loading saved settings…',
-  'starting-backend':  'Starting backend service…',
+  'init':              'Initializing ULTRONâ€¦',
+  'loading-settings':  'Loading saved settingsâ€¦',
+  'starting-backend':  'Starting backend serviceâ€¦',
   'backend-ok':        'Backend ready.',
-  'discovering':       'Searching for ULTRON Edge on local network…',
-  'found':             'Device found — opening dashboard…',
+  'discovering':       'Searching for ULTRON Edge on local networkâ€¦',
+  'found':             'Device found â€” opening dashboardâ€¦',
   'not-found':         'No device found on this network.',
   'error':             'Startup error.',
 };
@@ -28,10 +32,10 @@ export const SplashPage: React.FC = () => {
   const setBackendRunning = useAppStore((s) => s.setBackendRunning);
   const setAppVersion    = useAppStore((s) => s.setAppVersion);
   const setConfig        = useConnectionStore((s) => s.setConfig);
-  const enterSim         = useConnectionStore((s) => s.enterSimulation);
 
   const unlistenRef = useRef<(() => void) | null>(null);
   const didRun      = useRef(false);
+  const cancelled   = useRef(false);
 
   const pushLog = (msg: string) => setLog((prev) => [...prev.slice(-7), msg]);
   const advance = (p: StartupPhase, msg?: string) => {
@@ -41,11 +45,6 @@ export const SplashPage: React.FC = () => {
     pushLog(txt);
   };
 
-  const goSimulation = () => {
-    platform.startSimulation().catch(() => {});
-    enterSim();
-    setAppPhase('simulation');
-  };
   const goDiscovery = () => setAppPhase('discovery');
 
   useEffect(() => {
@@ -58,6 +57,34 @@ export const SplashPage: React.FC = () => {
       advance('loading-settings');
       let lastIp: string | null = null;
       try { const s = await platform.getSavedSettings(); lastIp = s.last_device_ip; } catch {}
+
+      // Cloud / hosted deployment: a backend URL is configured at build time.
+      // Connect straight to it, retrying until it responds (the free-tier host can
+      // cold-start for up to a minute), then open the dashboard.
+      if (CLOUD_API_BASE) {
+        advance('starting-backend');
+        let attempt = 0;
+        while (!cancelled.current) {
+          try {
+            const device = await platform.connectDevice(CLOUD_API_BASE);
+            setBackendRunning(true);
+            advance('found', 'Connected â€” opening dashboardâ€¦');
+            setConfig(deviceInfoToConfig(device, 'manual'));
+            platform.saveSettings({ last_device_ip: CLOUD_API_BASE }).catch(() => {});
+            await new Promise<void>((r) => setTimeout(r, 400));
+            if (!cancelled.current) setAppPhase('connected');
+            return;
+          } catch {
+            attempt += 1;
+            setBackendRunning(false);
+            advance('starting-backend', attempt <= 1
+              ? MESSAGES['starting-backend']
+              : 'Waking the backendâ€¦ first load can take up to a minute.');
+            await new Promise<void>((r) => setTimeout(r, 3000));
+          }
+        }
+        return;
+      }
 
       advance('starting-backend');
       try {
@@ -91,14 +118,6 @@ export const SplashPage: React.FC = () => {
         setConfig(cfg);
         platform.saveSettings({ last_device_ip: cfg.deviceIp }).catch(() => {});
 
-        // Request hardware mode automatically — fire-and-forget.
-        // If the Pi's sensors are not yet wired, the backend stays in simulation
-        // mode and returns success:false, which is handled gracefully.
-        fetch(`${device.api_base}/api/control/mode`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ simulated: false }),
-        }).catch(() => {});
 
         await new Promise<void>((r) => setTimeout(r, 700));
         setAppPhase(found.length > 1 ? 'discovery' : 'connected');
@@ -113,7 +132,10 @@ export const SplashPage: React.FC = () => {
       setMessage(`Startup failed: ${err instanceof Error ? err.message : String(err)}`);
     });
 
-    return () => { if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; } };
+    return () => {
+      cancelled.current = true;
+      if (unlistenRef.current) { unlistenRef.current(); unlistenRef.current = null; }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [platform]);
 
@@ -159,7 +181,7 @@ export const SplashPage: React.FC = () => {
                   ))}
                 </div>
               )}
-              {isFound && <span className="text-lg font-bold" style={{ color: 'var(--ok)' }}>✓</span>}
+              {isFound && <span className="text-lg font-bold" style={{ color: 'var(--ok)' }}>âœ“</span>}
               <p className="text-sm text-center leading-relaxed" style={{ color: 'var(--text-2)' }}>{message}</p>
             </div>
           )}
@@ -170,7 +192,7 @@ export const SplashPage: React.FC = () => {
               style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)' }}>
               {log.map((line, i) => (
                 <div key={i} style={{ color: 'var(--text-3)' }}>
-                  <span style={{ color: 'var(--border-hi)' }}>› </span>{line}
+                  <span style={{ color: 'var(--border-hi)' }}>â€º </span>{line}
                 </div>
               ))}
             </div>
@@ -189,28 +211,13 @@ export const SplashPage: React.FC = () => {
               <button onClick={goDiscovery} className="btn-primary w-full">
                 Search Again / Enter IP
               </button>
-              <button onClick={goSimulation} className="btn-secondary w-full">
-                Continue in Simulation Mode
-              </button>
-            </div>
-          )}
-
-          {/* Skip during search */}
-          {isSearching && (
-            <div className="flex justify-center mt-4">
-              <button onClick={goSimulation} className="text-xs transition-colors underline underline-offset-2"
-                style={{ color: 'var(--text-3)' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-2)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'var(--text-3)'; }}>
-                Skip — use simulation
-              </button>
             </div>
           )}
         </div>
       </div>
 
       <p className="mt-5 text-2xs tracking-widest uppercase" style={{ color: 'var(--text-3)' }}>
-        Oswar Software · ULTRON Phase 1 Demo
+        Oswar Software Â· ULTRON Phase 1 Demo
       </p>
     </div>
   );

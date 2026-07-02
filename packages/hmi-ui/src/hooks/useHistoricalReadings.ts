@@ -25,7 +25,9 @@ export function useHistoricalReadings(minutes: number): SensorReading[] {
         const res = await fetch(`${apiBase}/api/sensors/history?${params}`);
         if (!res.ok || cancelled) return;
         const data: { readings: SensorReading[] } = await res.json();
-        if (!cancelled) setDbReadings([...data.readings].reverse()); // DB = newest-first → chronological
+        if (!cancelled) {
+          setDbReadings(data.readings.filter((r) => r.source === 'bridge').reverse());
+        }
       } catch {
         // No backend or DB disabled — fall through to live-only
       }
@@ -36,9 +38,10 @@ export function useHistoricalReadings(minutes: number): SensorReading[] {
 
   // Merge: DB readings up to their last timestamp, then live readings after that
   return useMemo(() => {
-    if (!dbReadings.length) return storeReadings;
+    const liveBridgeReadings = storeReadings.filter((r) => r.source === 'bridge');
+    if (!dbReadings.length) return liveBridgeReadings;
     const cutoff   = dbReadings[dbReadings.length - 1]?.timestamp ?? '';
-    const liveTail = storeReadings.filter((r) => r.timestamp > cutoff);
+    const liveTail = liveBridgeReadings.filter((r) => r.timestamp > cutoff);
     const merged   = [...dbReadings, ...liveTail];
     return merged.length > 20_000 ? merged.slice(-20_000) : merged;
   }, [dbReadings, storeReadings]);

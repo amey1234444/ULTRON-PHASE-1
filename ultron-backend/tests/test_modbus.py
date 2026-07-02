@@ -1,5 +1,5 @@
 """
-ULTRON — Modbus subsystem unit tests
+ULTRON â€” Modbus subsystem unit tests
 ======================================
 All tests are self-contained (no physical hardware required).
 pymodbus is not needed for the converter, alarm, or register-map tests.
@@ -14,9 +14,9 @@ import struct
 
 import pytest
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # Helpers
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 def _pack_float32_abcd(value: float) -> tuple:
     """Reference encoder using struct directly (ABCD / big-endian)."""
@@ -26,9 +26,9 @@ def _pack_float32_abcd(value: float) -> tuple:
     return high, low
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 1. Float32 converters
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 from app.modbus.converters import (
     float_to_registers,
@@ -57,13 +57,13 @@ class TestFloat32ABCD:
             assert actual == expected, f"Mismatch for {value}: expected {expected}, got {actual}"
 
     def test_pressure_example(self):
-        """7.35 bar — well-known value used in register map documentation."""
+        """7.35 bar â€” well-known value used in register map documentation."""
         high, low = float_to_registers(7.35, "ABCD")
         recovered = registers_to_float(high, low, "ABCD")
         assert abs(recovered - 7.35) < 1e-4
 
     def test_temperature_example(self):
-        """82.45 °C — second well-known value from the documentation."""
+        """82.45 Â°C â€” second well-known value from the documentation."""
         high, low = float_to_registers(82.45, "ABCD")
         recovered = registers_to_float(high, low, "ABCD")
         assert abs(recovered - 82.45) < 1e-4
@@ -120,9 +120,9 @@ class TestFloat32InvalidByteOrder:
             registers_to_float(0x40EB, 0x851F, "???")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 2. UInt32 converters
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestUInt32Converters:
     CASES = [0, 1, 100, 65535, 65536, 100_000, 0xFFFF_FFFF]
@@ -160,16 +160,16 @@ class TestUInt32Converters:
         assert registers_to_uint32(high, low) == 3600
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 3. Alarm calculations
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 from app.modbus.alarms import calculate_alarm_status
 from app.modbus.register_map import ALARM_CRITICAL, ALARM_NORMAL, ALARM_WARNING
 
 # Thresholds mirror the defaults in .env:
-#   PRESSURE_MAX=11.0  → WARNING=8.8, CRITICAL=10.45
-#   TEMPERATURE_MAX=115.0 → WARNING=92.0, CRITICAL=109.25
+#   PRESSURE_MAX=11.0  â†’ WARNING=8.8, CRITICAL=10.45
+#   TEMPERATURE_MAX=115.0 â†’ WARNING=92.0, CRITICAL=109.25
 _P_WARN = 8.8
 _P_CRIT = 10.45
 _T_WARN = 92.0
@@ -177,7 +177,7 @@ _T_CRIT = 109.25
 
 
 class TestAlarmCalculation:
-    # ── Pressure ──────────────────────────────────────────────────────────────
+    # â”€â”€ Pressure â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def test_pressure_normal(self):
         assert calculate_alarm_status(7.0, _P_WARN, _P_CRIT) == ALARM_NORMAL
 
@@ -198,7 +198,7 @@ class TestAlarmCalculation:
         """Exactly at the critical threshold must return CRITICAL."""
         assert calculate_alarm_status(_P_CRIT, _P_WARN, _P_CRIT) == ALARM_CRITICAL
 
-    # ── Temperature ───────────────────────────────────────────────────────────
+    # â”€â”€ Temperature â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def test_temperature_normal(self):
         assert calculate_alarm_status(80.0, _T_WARN, _T_CRIT) == ALARM_NORMAL
 
@@ -217,7 +217,7 @@ class TestAlarmCalculation:
     def test_temperature_at_critical_boundary(self):
         assert calculate_alarm_status(_T_CRIT, _T_WARN, _T_CRIT) == ALARM_CRITICAL
 
-    # ── Edge cases ────────────────────────────────────────────────────────────
+    # â”€â”€ Edge cases â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def test_just_below_warning_is_normal(self):
         assert calculate_alarm_status(_P_WARN - 0.001, _P_WARN, _P_CRIT) == ALARM_NORMAL
 
@@ -231,9 +231,9 @@ class TestAlarmCalculation:
         assert calculate_alarm_status(_P_CRIT + 0.001, _P_WARN, _P_CRIT) == ALARM_CRITICAL
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 4. Register map constants and documentation
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 from app.modbus.register_map import (
     REG_COMM_MODE,
@@ -266,7 +266,7 @@ class TestRegisterMapConstants:
         assert REG_UPTIME_L == REG_UPTIME_H + 1
 
     def test_primary_registers_in_range_0_to_11(self):
-        """All primary registers must fit within PDU addresses 0–11."""
+        """All primary registers must fit within PDU addresses 0â€“11."""
         primaries = [
             REG_PRESSURE_H, REG_PRESSURE_L,
             REG_TEMP_H, REG_TEMP_L,
@@ -276,7 +276,7 @@ class TestRegisterMapConstants:
             REG_COMM_MODE, REG_HEARTBEAT,
         ]
         for reg in primaries:
-            assert 0 <= reg <= 11, f"Primary register {reg} is out of range 0–11"
+            assert 0 <= reg <= 11, f"Primary register {reg} is out of range 0â€“11"
 
     def test_compat_registers_at_address_100_101(self):
         assert REG_COMPAT_PRESSURE_INT == 100
@@ -344,12 +344,12 @@ class TestRegisterDocumentation:
         assert ranges["temperature_degc"]["max"] == 90.0
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 # 5. Compatibility integer registers
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 class TestCompatibilityRegisters:
-    """Verify the ×100 integer encoding used in registers 30101-30102."""
+    """Verify the Ã—100 integer encoding used in registers 30101-30102."""
 
     @pytest.mark.parametrize("pressure, expected", [
         (7.35,  735),
@@ -362,7 +362,7 @@ class TestCompatibilityRegisters:
     ])
     def test_pressure_x100(self, pressure, expected):
         actual = int(round(pressure * 100))
-        assert actual == expected, f"Pressure {pressure} × 100 → expected {expected}, got {actual}"
+        assert actual == expected, f"Pressure {pressure} Ã— 100 â†’ expected {expected}, got {actual}"
 
     @pytest.mark.parametrize("temperature, expected", [
         (82.45, 8245),
@@ -374,86 +374,23 @@ class TestCompatibilityRegisters:
     ])
     def test_temperature_x100(self, temperature, expected):
         actual = int(round(temperature * 100))
-        assert actual == expected, f"Temp {temperature} × 100 → expected {expected}, got {actual}"
+        assert actual == expected, f"Temp {temperature} Ã— 100 â†’ expected {expected}, got {actual}"
 
     def test_compat_value_fits_in_uint16(self):
         """All realistic sensor values should fit in a single 16-bit register."""
         for pressure in [6.0, 7.0, 7.35, 8.0, 8.8, 10.45, 11.0]:
             value = int(round(pressure * 100))
-            assert 0 <= value <= 0xFFFF, f"Pressure ×100 overflows UInt16: {value}"
+            assert 0 <= value <= 0xFFFF, f"Pressure Ã—100 overflows UInt16: {value}"
 
         for temperature in [70.0, 80.0, 82.45, 90.0, 92.0, 109.25, 115.0]:
             value = int(round(temperature * 100))
-            assert 0 <= value <= 0xFFFF, f"Temperature ×100 overflows UInt16: {value}"
+            assert 0 <= value <= 0xFFFF, f"Temperature Ã—100 overflows UInt16: {value}"
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# 6. Simulated sensor output validation (no hardware needed)
-# ═══════════════════════════════════════════════════════════════════════════════
 
-from app.sensor_manager import SimulatedPressureSensor, SimulatedTemperatureSensor
-
-
-class TestSimulatedPressureSensor:
-    """Verify the simulator stays within physical sensor bounds."""
-
-    def setup_method(self):
-        self.sensor = SimulatedPressureSensor()
-
-    def _read(self):
-        return asyncio.get_event_loop().run_until_complete(self.sensor.read())
-
-    def test_initial_reading_within_physical_bounds(self):
-        """First reading must be within 4.0–11.0 bar (the configured physical range)."""
-        value = self._read()
-        assert 4.0 <= value <= 11.0, f"Initial pressure out of bounds: {value}"
-
-    def test_twenty_readings_within_physical_bounds(self):
-        """Twenty consecutive readings must all stay within the physical range."""
-        for _ in range(20):
-            value = self._read()
-            assert 4.0 <= value <= 11.0, f"Pressure out of physical bounds: {value}"
-
-    def test_reading_is_rounded_to_two_decimal_places(self):
-        value = self._read()
-        assert round(value, 2) == value, f"Pressure not rounded to 2 d.p.: {value}"
-
-    def test_last_value_property_updated(self):
-        value = self._read()
-        assert self.sensor.last_value == value
-
-
-class TestSimulatedTemperatureSensor:
-    """Verify the temperature simulator stays within physical sensor bounds."""
-
-    def setup_method(self):
-        self.sensor = SimulatedTemperatureSensor()
-
-    def _read(self):
-        return asyncio.get_event_loop().run_until_complete(self.sensor.read())
-
-    def test_initial_reading_within_physical_bounds(self):
-        """First reading must be within 50.0–115.0 °C (the configured physical range)."""
-        value = self._read()
-        assert 50.0 <= value <= 115.0, f"Initial temperature out of bounds: {value}"
-
-    def test_twenty_readings_within_physical_bounds(self):
-        for _ in range(20):
-            value = self._read()
-            assert 50.0 <= value <= 115.0, f"Temperature out of physical bounds: {value}"
-
-    def test_reading_is_rounded_to_one_decimal_place(self):
-        value = self._read()
-        assert round(value, 1) == value, f"Temperature not rounded to 1 d.p.: {value}"
-
-    def test_last_value_property_updated(self):
-        value = self._read()
-        assert self.sensor.last_value == value
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 7. Register update logic (no pymodbus required — uses a mock context)
-# ═══════════════════════════════════════════════════════════════════════════════
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+# 7. Register update logic (no pymodbus required â€” uses a mock context)
+# â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
@@ -539,7 +476,7 @@ class TestRegisterUpdateLogic:
         assert regs[REG_SENSOR_FAULT] == FAULT_NONE
 
     def test_compat_pressure_integer(self):
-        """Register 100 must hold pressure × 100 as an integer (7.35 → 735)."""
+        """Register 100 must hold pressure Ã— 100 as an integer (7.35 â†’ 735)."""
         regs = self._capture_register_write(pressure=7.35)
         from app.modbus.register_map import REG_COMPAT_PRESSURE_INT
         assert regs[REG_COMPAT_PRESSURE_INT] == 735, (
@@ -547,7 +484,7 @@ class TestRegisterUpdateLogic:
         )
 
     def test_compat_temperature_integer(self):
-        """Register 101 must hold temperature × 100 as an integer (82.45 → 8245)."""
+        """Register 101 must hold temperature Ã— 100 as an integer (82.45 â†’ 8245)."""
         regs = self._capture_register_write(temperature=82.45)
         from app.modbus.register_map import REG_COMPAT_TEMP_INT
         assert regs[REG_COMPAT_TEMP_INT] == 8245, (
@@ -575,7 +512,7 @@ class TestRegisterUpdateLogic:
         regs_2 = slave_mock.setValues.call_args[0][2]
 
         assert regs_2[REG_HEARTBEAT] == regs_1[REG_HEARTBEAT] + 1, (
-            f"Heartbeat did not increment: {regs_1[REG_HEARTBEAT]} → {regs_2[REG_HEARTBEAT]}"
+            f"Heartbeat did not increment: {regs_1[REG_HEARTBEAT]} â†’ {regs_2[REG_HEARTBEAT]}"
         )
 
     def test_total_register_count(self):
@@ -602,7 +539,7 @@ class TestRegisterUpdateLogic:
         assert regs[REG_TEMP_ALARM] == ALARM_NORMAL
 
     def test_temperature_alarm_warning_above_threshold(self):
-        """Temperature above 92 °C (92% of 115 default) must set register 30006 = 1."""
+        """Temperature above 92 Â°C (92% of 115 default) must set register 30006 = 1."""
         from app.modbus.register_map import ALARM_WARNING, REG_TEMP_ALARM
         regs = self._capture_register_write(temperature=93.0)
         assert regs[REG_TEMP_ALARM] == ALARM_WARNING

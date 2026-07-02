@@ -5,7 +5,7 @@ import { RECONNECT_MS }       from '../config/constants';
 import type { SensorReading } from '../types/sensor';
 
 /**
- * Establishes a WebSocket connection to the discovered (or simulated) backend,
+ * Establishes a WebSocket connection to the discovered backend,
  * feeds readings into the Zustand sensor store, and auto-reconnects on failure.
  *
  * Call once at the root of the DashboardPage component tree.
@@ -38,7 +38,7 @@ export function useWebSocket(): void {
       if (!mountedRef.current) return;
       try {
         const data = JSON.parse(evt.data) as SensorReading;
-        if (typeof data.pressure === 'number' && typeof data.temperature === 'number') {
+        if (typeof data.pressure === 'number' && typeof data.temperature === 'number' && data.source === 'bridge') {
           addReading(data);
         }
       } catch {

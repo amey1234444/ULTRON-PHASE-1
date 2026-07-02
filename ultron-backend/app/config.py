@@ -14,19 +14,19 @@ load_dotenv()
 class SensorConfig:
     pressure_name: str = field(default_factory=lambda: os.getenv("PRESSURE_SENSOR_NAME", "PSN-001"))
     temperature_name: str = field(default_factory=lambda: os.getenv("TEMPERATURE_SENSOR_NAME", "TSN-001"))
-    # GPIO pins — only relevant when running on real hardware
+    # GPIO pins â€” only relevant when running on real hardware
     pressure_gpio_pin: int = field(default_factory=lambda: int(os.getenv("PRESSURE_GPIO_PIN", "17")))
     temperature_gpio_pin: int = field(default_factory=lambda: int(os.getenv("TEMPERATURE_GPIO_PIN", "27")))
-    # ADS1115 ADC settings for 4–20 mA pressure sensor
+    # ADS1115 ADC settings for 4â€“20 mA pressure sensor
     # pressure_sensor_range_bar: full-scale of the physical transmitter (4 mA = 0 bar, 20 mA = range)
     pressure_sensor_range_bar: float = field(
         default_factory=lambda: float(os.getenv("PRESSURE_SENSOR_RANGE_BAR", "10.0"))
     )
-    # pressure_ads1115_channel: 0–3 → AIN0–AIN3 on the ADS1115
+    # pressure_ads1115_channel: 0â€“3 â†’ AIN0â€“AIN3 on the ADS1115
     pressure_ads1115_channel: int = field(
         default_factory=lambda: int(os.getenv("PRESSURE_ADS1115_CHANNEL", "0"))
     )
-    # pressure_ads1115_address: I2C address (0x48 default; ADDR→GND)
+    # pressure_ads1115_address: I2C address (0x48 default; ADDRâ†’GND)
     pressure_ads1115_address: int = field(
         default_factory=lambda: int(os.getenv("PRESSURE_ADS1115_ADDRESS", "0x48"), 0)
     )
@@ -44,10 +44,6 @@ class ServerConfig:
     # Broadcast interval in seconds (default 100 ms)
     broadcast_interval: float = field(
         default_factory=lambda: float(os.getenv("BROADCAST_INTERVAL_MS", "100")) / 1000.0
-    )
-    # Simulated mode — set SIMULATED=false on real hardware
-    simulated: bool = field(
-        default_factory=lambda: os.getenv("SIMULATED", "true").lower() in ("true", "1", "yes")
     )
 
 
@@ -72,15 +68,15 @@ class DiscoveryConfig:
 
 @dataclass(frozen=True)
 class ModbusConfig:
-    # ── Modbus TCP ────────────────────────────────────────────────────────────
+    # â”€â”€ Modbus TCP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     tcp_enabled: bool = field(
         default_factory=lambda: os.getenv("MODBUS_TCP_ENABLED", "true").lower() in ("true", "1", "yes")
     )
     tcp_host: str = field(default_factory=lambda: os.getenv("MODBUS_TCP_HOST", "0.0.0.0"))
-    # Default dev port 5020 — avoids needing root privileges on Linux (502 requires root)
+    # Default dev port 5020 â€” avoids needing root privileges on Linux (502 requires root)
     tcp_port: int = field(default_factory=lambda: int(os.getenv("MODBUS_TCP_PORT", "5020")))
 
-    # ── Modbus RTU ────────────────────────────────────────────────────────────
+    # â”€â”€ Modbus RTU â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     rtu_enabled: bool = field(
         default_factory=lambda: os.getenv("MODBUS_RTU_ENABLED", "false").lower() in ("true", "1", "yes")
     )
@@ -92,10 +88,10 @@ class ModbusConfig:
     rtu_bytesize: int = field(default_factory=lambda: int(os.getenv("MODBUS_RTU_BYTESIZE", "8")))
     rtu_slave_id: int = field(default_factory=lambda: int(os.getenv("MODBUS_RTU_SLAVE_ID", "1")))
 
-    # ── Register encoding ─────────────────────────────────────────────────────
+    # â”€â”€ Register encoding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # Float32 byte order: ABCD (big-endian, default) | CDAB | BADC | DCBA
     byte_order: str = field(default_factory=lambda: os.getenv("MODBUS_BYTE_ORDER", "ABCD"))
-    # Compatibility integer registers 30101-30102 (value × 100)
+    # Compatibility integer registers 30101-30102 (value Ã— 100)
     compat_registers: bool = field(
         default_factory=lambda: os.getenv("MODBUS_COMPAT_REGISTERS", "true").lower() in ("true", "1", "yes")
     )
@@ -120,7 +116,7 @@ class AppConfig:
     app_name: str = field(default_factory=lambda: os.getenv("APP_NAME", "ULTRON"))
     version: str = field(default_factory=lambda: os.getenv("APP_VERSION", "1.0.0"))
     device_id: str = field(default_factory=lambda: os.getenv("DEVICE_ID", "RPi4-ULTRON-001"))
-    # Machine ID — identifies the monitored physical machine (not the edge device)
+    # Machine ID â€” identifies the monitored physical machine (not the edge device)
     machine_id: str = field(default_factory=lambda: os.getenv("MACHINE_ID", "RAV-01"))
     server:    ServerConfig    = field(default_factory=ServerConfig)
     sensor:    SensorConfig    = field(default_factory=SensorConfig)

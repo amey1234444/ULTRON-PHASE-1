@@ -1,13 +1,25 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAppStore }       from '../store/appStore';
 import { useSettings }       from '../hooks/useSettings';
 import { useBackend }        from '../hooks/useBackend';
-import { useHealth, useSetMode } from '../hooks/useDeviceInfo';
 import { useThresholdStore } from '../store/thresholdStore';
 import { useConnectionStore, deviceInfoToConfig } from '../store/connectionStore';
 import type { ConnectionProtocol } from '../store/connectionStore';
 import { usePlatform } from '../platform/PlatformContext';
 import type { SensorThresholds, HealthThresholds } from '../store/thresholdStore';
+
+interface BridgeEntry {
+  id: string;
+  url: string;
+  isPush?: boolean;
+  status: string;
+  lastSeen: number;
+  lastError: string | null;
+  registeredAt: number;
+  pollCount: number;
+  errorCount: number;
+  hasData: boolean;
+}
 
 interface RowProps { label: string; children: React.ReactNode }
 const Row: React.FC<RowProps> = ({ label, children }) => (
@@ -53,6 +65,185 @@ const inputClass = {
   outline: 'none',
 } as React.CSSProperties;
 
+// ---------------------------------------------------------------------------
+// Bridge Configuration section (extracted for clarity)
+// ---------------------------------------------------------------------------
+interface BridgeSectionProps {
+  apiBase: string;
+  bridgeUrl: string;
+  setBridgeUrl: (v: string) => void;
+  bridges: BridgeEntry[];
+  setBridges: (v: BridgeEntry[]) => void;
+  bridgeMsg: { text: string; ok: boolean } | null;
+  setBridgeMsg: (v: { text: string; ok: boolean } | null) => void;
+  registering: boolean;
+  setRegistering: (v: boolean) => void;
+  bridgePollRef: React.MutableRefObject<ReturnType<typeof setInterval> | null>;
+  inputClass: React.CSSProperties;
+}
+
+const BridgeSection: React.FC<BridgeSectionProps> = ({
+  apiBase, bridgeUrl, setBridgeUrl, bridges, setBridges,
+  bridgeMsg, setBridgeMsg, registering, setRegistering,
+  bridgePollRef, inputClass: ic,
+}) => {
+  const fetchBridges = useCallback(async () => {
+    if (!apiBase) return;
+    try {
+      const res = await fetch(`${apiBase}/api/bridges`);
+      if (res.ok) {
+        const body = await res.json();
+        setBridges(body.bridges ?? []);
+      }
+    } catch { /* silent */ }
+  }, [apiBase, setBridges]);
+
+  // Poll bridge list every 3 seconds while settings page is open
+  useEffect(() => {
+    void fetchBridges();
+    bridgePollRef.current = setInterval(() => { void fetchBridges(); }, 3000);
+    return () => { if (bridgePollRef.current) clearInterval(bridgePollRef.current); };
+  }, [fetchBridges, bridgePollRef]);
+
+  const handleRegister = async () => {
+    let url = bridgeUrl.trim();
+    if (!url) { setBridgeMsg({ text: 'Enter a bridge URL', ok: false }); return; }
+    if (!url.startsWith('http')) url = 'http://' + url;
+    setRegistering(true);
+    setBridgeMsg(null);
+    try {
+      const res = await fetch(`${apiBase}/api/bridges/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const body = await res.json();
+      if (res.ok && body.success) {
+        setBridgeMsg({ text: body.message ?? 'Bridge registered', ok: true });
+        setBridgeUrl('');
+        void fetchBridges();
+      } else {
+        setBridgeMsg({ text: body.message ?? 'Registration failed', ok: false });
+      }
+    } catch (err) {
+      setBridgeMsg({ text: err instanceof Error ? err.message : 'Request failed', ok: false });
+    } finally {
+      setRegistering(false);
+      setTimeout(() => setBridgeMsg(null), 6000);
+    }
+  };
+
+  const handleUnregister = async (id: string) => {
+    try {
+      await fetch(`${apiBase}/api/bridges/${id}`, { method: 'DELETE' });
+      void fetchBridges();
+    } catch { /* silent */ }
+  };
+
+  const statusColor = (s: string) => {
+    if (s === 'connected') return 'var(--ok)';
+    if (s === 'error') return 'var(--crit)';
+    return 'var(--warn)';
+  };
+
+  const ago = (ts: number) => {
+    if (!ts) return 'never';
+    const diff = Math.round((Date.now() / 1000) - ts);
+    if (diff < 5) return 'just now';
+    if (diff < 60) return `${diff}s ago`;
+    return `${Math.round(diff / 60)}m ago`;
+  };
+
+  return (
+    <Section title="BRIDGE CONFIGURATION">
+      <p className="text-2xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
+        Register an external bridge (e.g., ultron_bridge.py) to stream real sensor data
+        to this dashboard. Enter the bridge URL below (http://IP:PORT, default port 8765).
+        This <b>pull</b> mode requires the backend to reach the bridge over the network.
+      </p>
+      <p className="text-2xs mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
+        If the backend is hosted in the cloud and the bridge runs on a local/private
+        network, use <b>push</b> mode instead â€” start the bridge with
+        {' '}<code>--push-url &lt;backend&gt;</code> and it will appear here automatically.
+      </p>
+
+      <Row label="Bridge URL">
+        <input
+          type="text"
+          value={bridgeUrl}
+          onChange={(e) => setBridgeUrl(e.target.value)}
+          placeholder="http://192.168.1.100:8765"
+          onKeyDown={(e) => { if (e.key === 'Enter') void handleRegister(); }}
+          style={{ ...ic, width: 220 }}
+        />
+      </Row>
+
+      {bridgeMsg && (
+        <div className="rounded px-3 py-2 text-xs mt-3"
+          style={{
+            background: bridgeMsg.ok ? 'var(--ok-dim, rgba(32,208,104,0.08))' : 'var(--warn-dim)',
+            border: `1px solid ${bridgeMsg.ok ? 'var(--ok)' : 'var(--warn)'}`,
+            color: bridgeMsg.ok ? 'var(--ok)' : 'var(--warn)',
+          }}>
+          {bridgeMsg.text}
+        </div>
+      )}
+
+      <button
+        onClick={() => { void handleRegister(); }}
+        disabled={registering || !bridgeUrl.trim()}
+        className="w-full mt-3 rounded px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
+        style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
+      >
+        {registering ? 'Registering...' : 'Register Bridge'}
+      </button>
+
+      {bridges.length > 0 && (
+        <div className="mt-4">
+          <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>
+            REGISTERED BRIDGES
+          </div>
+          <div className="space-y-2">
+            {bridges.map((b) => (
+              <div key={b.id}
+                className="flex items-center justify-between rounded px-3 py-2"
+                style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)' }}>
+                <div className="flex-1 min-w-0 mr-2">
+                  <div className="text-xs font-mono truncate" style={{ color: 'var(--text)' }}>{b.url}</div>
+                  <div className="text-2xs mt-0.5 flex gap-3" style={{ color: 'var(--text-3)' }}>
+                    <span style={{ color: statusColor(b.status) }}>{b.status.toUpperCase()}</span>
+                    <span style={{ color: 'var(--accent)' }}>{b.isPush ? 'PUSH' : 'PULL'}</span>
+                    <span>{b.isPush ? 'pushes' : 'polls'}: {b.pollCount}</span>
+                    {b.errorCount > 0 && <span style={{ color: 'var(--crit)' }}>errors: {b.errorCount}</span>}
+                    <span>seen: {ago(b.lastSeen)}</span>
+                  </div>
+                </div>
+                <button
+                  onClick={() => { void handleUnregister(b.id); }}
+                  className="text-2xs px-2 py-1 rounded font-semibold"
+                  style={{ background: 'var(--crit-dim)', color: 'var(--crit)', border: '1px solid var(--crit)' }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {bridges.length === 0 && (
+        <div className="mt-4 text-2xs text-center py-4" style={{ color: 'var(--text-3)' }}>
+          No bridges registered. Data comes from the built-in simulator.
+        </div>
+      )}
+    </Section>
+  );
+};
+
+
+// ---------------------------------------------------------------------------
+// Main Settings Page
+// ---------------------------------------------------------------------------
 interface Props { onBack?: () => void }
 
 export const SettingsPage: React.FC<Props> = ({ onBack }) => {
@@ -61,15 +252,21 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
   const appVersion    = useAppStore((s) => s.appVersion);
   const { settings, loading, update } = useSettings();
   const { status: backendStatus, startAsync, stop } = useBackend();
-  const { data: health }                            = useHealth();
-  const setMode                                     = useSetMode();
   const setConfig     = useConnectionStore((s) => s.setConfig);
   const [saving, setSaving] = useState(false);
   const [saved,  setSaved]  = useState(false);
-  const [modeMsg, setModeMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [ipDraft, setIpDraft] = useState('');
   const [connectMsg, setConnectMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [connecting, setConnecting] = useState(false);
+
+  // Bridge management state
+  const [bridgeUrl, setBridgeUrl]       = useState('');
+  const [bridges, setBridges]           = useState<BridgeEntry[]>([]);
+  const [bridgeMsg, setBridgeMsg]       = useState<{ text: string; ok: boolean } | null>(null);
+  const [registering, setRegistering]   = useState(false);
+  const bridgePollRef                   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const config = useConnectionStore((s) => s.config);
+  const bridgeApiBase = config?.apiBase ?? import.meta.env.VITE_API_BASE ?? '';
 
   useEffect(() => {
     if (settings && !ipDraft) setIpDraft(settings.last_device_ip ?? '');
@@ -93,16 +290,6 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
     finally { setSaving(false); }
   };
 
-  const handleSetMode = async (simulated: boolean) => {
-    setModeMsg(null);
-    try {
-      const result = await setMode.mutateAsync(simulated);
-      setModeMsg({ text: result.message, ok: result.success });
-    } catch (err) {
-      setModeMsg({ text: err instanceof Error ? err.message : 'Request failed', ok: false });
-    }
-    setTimeout(() => setModeMsg(null), 4000);
-  };
 
   const handleConnect = async () => {
     const ip = ipDraft.trim();
@@ -130,7 +317,7 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
   if (loading || !settings) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-3)' }}>
-        <span className="text-sm">Loading settings…</span>
+        <span className="text-sm">Loading settingsâ€¦</span>
       </div>
     );
   }
@@ -150,11 +337,11 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
           Back
         </button>
         <span className="text-sm font-bold tracking-widest uppercase" style={{ color: 'var(--text)' }}>Settings</span>
-        {saved  && <span className="ml-auto text-xs font-semibold" style={{ color: 'var(--ok)' }}>✓ Saved</span>}
-        {saving && <span className="ml-auto text-xs" style={{ color: 'var(--warn)' }}>Saving…</span>}
+        {saved  && <span className="ml-auto text-xs font-semibold" style={{ color: 'var(--ok)' }}>âœ“ Saved</span>}
+        {saving && <span className="ml-auto text-xs" style={{ color: 'var(--warn)' }}>Savingâ€¦</span>}
       </div>
 
-      <div className="flex-1 overflow-auto p-4 max-w-2xl w-full mx-auto">
+      <div className="flex-1 overflow-auto p-3 sm:p-4 max-w-2xl w-full mx-auto">
 
         <Section title="BACKEND SERVICE">
           <Row label="Status">
@@ -184,67 +371,21 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
           </div>
         </Section>
 
-        {/* ── Data Source ──────────────────────────────────────────────────── */}
-        <Section title="DATA SOURCE">
-          <Row label="Active Mode">
-            {health ? (
-              <span
-                className="font-semibold tracking-widest text-xs"
-                style={{ color: health.mode === 'simulated' ? 'var(--warn)' : 'var(--ok)' }}
-              >
-                {health.mode === 'simulated' ? 'SIMULATION' : 'HARDWARE'}
-              </span>
-            ) : (
-              <span style={{ color: 'var(--text-3)' }}>—</span>
-            )}
-          </Row>
 
-          <p className="text-2xs mt-2 mb-3 leading-relaxed" style={{ color: 'var(--text-3)' }}>
-            Switch the backend between its built-in simulator and real GPIO/I2C hardware sensors.
-            Switching to hardware will fail gracefully if the Pi drivers are not available,
-            leaving simulation active.
-          </p>
-
-          {modeMsg && (
-            <div
-              className="rounded px-3 py-2 text-xs mb-3"
-              style={{
-                background: modeMsg.ok ? 'var(--ok-dim, rgba(32,208,104,0.08))' : 'var(--warn-dim)',
-                border: `1px solid ${modeMsg.ok ? 'var(--ok)' : 'var(--warn)'}`,
-                color: modeMsg.ok ? 'var(--ok)' : 'var(--warn)',
-              }}
-            >
-              {modeMsg.text}
-            </div>
-          )}
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => { void handleSetMode(false); }}
-              disabled={setMode.isPending || health?.mode === 'hardware'}
-              className="flex-1 rounded px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
-              style={{
-                background: health?.mode === 'hardware' ? 'var(--ok-dim, rgba(32,208,104,0.12))' : 'var(--panel-alt)',
-                border: `1px solid ${health?.mode === 'hardware' ? 'var(--ok)' : 'var(--border)'}`,
-                color: health?.mode === 'hardware' ? 'var(--ok)' : 'var(--text-2)',
-              }}
-            >
-              {health?.mode === 'hardware' ? '✓ Hardware' : 'Use Hardware'}
-            </button>
-            <button
-              onClick={() => { void handleSetMode(true); }}
-              disabled={setMode.isPending || health?.mode === 'simulated'}
-              className="flex-1 rounded px-3 py-2 text-sm font-medium transition-colors disabled:opacity-40"
-              style={{
-                background: health?.mode === 'simulated' ? 'var(--warn-dim)' : 'var(--panel-alt)',
-                border: `1px solid ${health?.mode === 'simulated' ? 'var(--warn)' : 'var(--border)'}`,
-                color: health?.mode === 'simulated' ? 'var(--warn)' : 'var(--text-2)',
-              }}
-            >
-              {health?.mode === 'simulated' ? '✓ Simulation' : 'Use Simulation'}
-            </button>
-          </div>
-        </Section>
+        {/* â”€â”€ Bridge Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+        <BridgeSection
+          apiBase={bridgeApiBase}
+          bridgeUrl={bridgeUrl}
+          setBridgeUrl={setBridgeUrl}
+          bridges={bridges}
+          setBridges={setBridges}
+          bridgeMsg={bridgeMsg}
+          setBridgeMsg={setBridgeMsg}
+          registering={registering}
+          setRegistering={setRegistering}
+          bridgePollRef={bridgePollRef}
+          inputClass={inputClass}
+        />
 
         <Section title="DEVICE CONNECTION">
           <Row label="Device IP">
@@ -273,7 +414,6 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
               <option value="lan">LAN / Ethernet</option>
               <option value="wifi">Wi-Fi</option>
               <option value="manual">Manual IP</option>
-              <option value="simulation">Simulation</option>
             </select>
           </Row>
 
@@ -294,7 +434,7 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
             className="w-full mt-3 rounded px-3 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
             style={{ background: 'var(--accent-dim)', border: '1px solid var(--accent)', color: 'var(--accent)' }}
           >
-            {connecting ? 'Connecting…' : 'Connect to Device'}
+            {connecting ? 'Connectingâ€¦' : 'Connect to Device'}
           </button>
         </Section>
 
@@ -324,7 +464,7 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
         <Section title="ALARM THRESHOLDS">
           <p className="text-2xs mb-3" style={{ color: 'var(--text-3)' }}>
             Changes apply immediately and persist across sessions.
-            LL = Low-Low (critical) · L = Low (warning) · H = High (warning) · HH = High-High (critical)
+            LL = Low-Low (critical) Â· L = Low (warning) Â· H = High (warning) Â· HH = High-High (critical)
           </p>
 
           {/* Pressure */}
@@ -349,7 +489,7 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
 
           {/* Temperature */}
           <div className="mb-3">
-            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>TEMPERATURE (°C)</div>
+            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>TEMPERATURE (Â°C)</div>
             <div className="grid grid-cols-4 gap-2">
               {(['ll', 'l', 'h', 'hh'] as const).map((key) => (
                 <div key={key}>
@@ -369,7 +509,7 @@ export const SettingsPage: React.FC<Props> = ({ onBack }) => {
 
           {/* Health Score */}
           <div>
-            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>SYSTEM HEALTH (score 0–100)</div>
+            <div className="text-2xs font-bold tracking-widest mb-2" style={{ color: 'var(--text-2)' }}>SYSTEM HEALTH (score 0â€“100)</div>
             <div className="grid grid-cols-4 gap-2">
               {(['ll', 'l'] as const).map((key) => (
                 <div key={key}>

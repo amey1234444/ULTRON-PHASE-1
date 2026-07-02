@@ -27,7 +27,8 @@ def init_db(path: str, retention_days: int) -> None:
             machine_id  TEXT    NOT NULL,
             pressure    REAL    NOT NULL,
             temperature REAL,
-            status      TEXT    NOT NULL
+            status      TEXT    NOT NULL,
+            source      TEXT    NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS idx_readings_ts ON readings(timestamp);
 
@@ -42,6 +43,11 @@ def init_db(path: str, retention_days: int) -> None:
             acknowledged_at TEXT
         );
     """)
+    try:
+        _conn.execute("ALTER TABLE readings ADD COLUMN source TEXT NOT NULL DEFAULT ''")
+        logger.info("Migration: added source column to readings")
+    except sqlite3.OperationalError:
+        pass
     _conn.commit()
     _purge_old(retention_days)
     logger.info("SQLite ready: %s  (retention=%d days)", db_path.resolve(), retention_days)
@@ -64,8 +70,8 @@ def flush_readings(batch: list) -> int:
     if not batch or _conn is None:
         return 0
     _conn.executemany(
-        "INSERT INTO readings (timestamp, machine_id, pressure, temperature, status) "
-        "VALUES (:timestamp, :machine_id, :pressure, :temperature, :status)",
+        "INSERT INTO readings (timestamp, machine_id, pressure, temperature, status, source) "
+        "VALUES (:timestamp, :machine_id, :pressure, :temperature, :status, :source)",
         batch,
     )
     _conn.commit()
@@ -80,7 +86,7 @@ def query_history(
     """Return readings newest-first. Runs inside asyncio.to_thread."""
     if _conn is None:
         return []
-    clauses: list = []
+    clauses: list = ["source = 'bridge'"]
     params: list = []
     if from_ts:
         clauses.append("timestamp >= ?")
@@ -91,7 +97,7 @@ def query_history(
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(min(limit, 10_000))
     rows = _conn.execute(
-        f"SELECT timestamp, machine_id, pressure, temperature, status "
+        f"SELECT timestamp, machine_id, pressure, temperature, status, source "
         f"FROM readings {where} ORDER BY timestamp DESC LIMIT ?",
         params,
     ).fetchall()
@@ -102,6 +108,7 @@ def query_history(
             "pressure": r[2],
             "temperature": r[3],
             "status": r[4],
+            "source": r[5],
         }
         for r in rows
     ]
@@ -110,7 +117,7 @@ def query_history(
 def count_readings() -> int:
     if _conn is None:
         return 0
-    return _conn.execute("SELECT COUNT(*) FROM readings").fetchone()[0]
+    return _conn.execute("SELECT COUNT(*) FROM readings WHERE source = 'bridge'").fetchone()[0]
 
 
 def close_db() -> None:

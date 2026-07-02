@@ -10,30 +10,38 @@ import io
 import json
 import time
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 import orjson
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 
 from app.config import settings
 from app import database as db
+from app.asset_hierarchy import router as asset_router, init_asset_db
+from app import device_registry
+from app.device_registry import router as device_router, init_device_db
 from app.discovery.mdns_advertiser import MDNSAdvertiser
 from app.logger import logger
 from app.models import (
+    BridgeIngestRequest,
+    BridgeIngestResponse,
+    BridgeListResponse,
+    BridgeRegisterRequest,
+    BridgeRegisterResponse,
     DeviceIdentityResponse,
     DeviceInfo,
     HealthResponse,
-    ModeChangeRequest,
-    ModeChangeResponse,
     ModbusStatusResponse,
     SensorHistoryResponse,
     SensorSnapshot,
 )
 from app.modbus.modbus_service import ModbusService
 from app.modbus.register_map import build_register_documentation
+from app.bridge_manager import BridgeManager
 from app.sensor_manager import SensorManager
 from app.websocket_manager import WebSocketManager
 
@@ -44,6 +52,7 @@ from app.websocket_manager import WebSocketManager
 sensor_manager  = SensorManager()
 ws_manager      = WebSocketManager()
 modbus_service  = ModbusService()
+bridge_manager  = BridgeManager()
 mdns_advertiser = MDNSAdvertiser(
     device_name     = settings.discovery.device_name,
     hostname        = settings.discovery.hostname,
@@ -52,48 +61,54 @@ mdns_advertiser = MDNSAdvertiser(
     version         = settings.version,
 )
 _start_time: float = 0.0
-_reading_buffer: list = []  # staging area — flushed to SQLite every DB_BATCH_INTERVAL_S
+_reading_buffer: list = []  # staging area â€” flushed to SQLite every DB_BATCH_INTERVAL_S
 
 
 # ---------------------------------------------------------------------------
-# Combined sensor loop — read → broadcast WebSocket → update Modbus registers
+# Combined sensor loop â€” read â†’ broadcast WebSocket â†’ update Modbus registers
 # ---------------------------------------------------------------------------
 
-async def _sensor_loop(interval: float) -> None:
+async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> None:
     """
-    Single read-and-distribute loop that:
-      1. Reads both sensors concurrently (via SensorManager).
-      2. Broadcasts the JSON payload to all WebSocket clients.
-      3. Writes all Modbus Input Registers with the new values.
-
-    Runs as a named asyncio.Task for the lifetime of the server.
-    Individual read/broadcast/register errors are logged and skipped;
-    the loop never exits on its own.
+    Called by BridgeManager when real data arrives from a registered bridge.
+    Creates a SensorReading from the bridge data and broadcasts it with
+    the equipment_type_id tag so frontends display data for the correct equipment.
     """
-    logger.info("Sensor loop started  (interval=%.0f ms)", interval * 1000)
-    while True:
-        try:
-            reading = await sensor_manager.read()
-            await ws_manager.broadcast(reading)
-            modbus_service.update_registers(
-                reading, uptime_s=time.monotonic() - _start_time
-            )
-            if settings.db.enabled:
-                _reading_buffer.append({
-                    "timestamp":   reading.timestamp.isoformat(),
-                    "machine_id":  settings.machine_id,
-                    "pressure":    reading.pressure,
-                    "temperature": reading.temperature,
-                    "status":      reading.status.value,
-                })
-        except Exception as exc:
-            logger.error("Sensor loop error: %s", exc, exc_info=True)
-        await asyncio.sleep(interval)
+    from app.models import SensorReading, SystemStatus
+
+    status = sensor_manager._derive_status(pressure, temperature)
+    machine_id = bridge_info.machine_id
+    device_id = bridge_info.device_node_id
+    reading = SensorReading(
+        timestamp=datetime.now(timezone.utc),
+        pressure=pressure,
+        temperature=temperature,
+        status=status,
+        machine_id=machine_id,
+        device_id=device_id,
+        source="bridge",
+    )
+    sensor_manager._latest = reading
+    await ws_manager.broadcast(reading, equipment_type_id=bridge_info.equipment_type_id)
+    modbus_service.update_registers(
+        reading, uptime_s=time.monotonic() - _start_time
+    )
+    if settings.db.enabled:
+        _reading_buffer.append({
+            "timestamp":   reading.timestamp.isoformat(),
+            "machine_id":  machine_id or settings.machine_id,
+            "pressure":    reading.pressure,
+            "temperature": reading.temperature,
+            "status":      reading.status.value,
+            "source":      "bridge",
+            "equipment_type_id": bridge_info.equipment_type_id,
+        })
+    logger.debug(
+        "Bridge data: P=%.2f T=%.2f from %s (equip=%s)",
+        pressure, temperature, bridge_info.url, bridge_info.equipment_type_id,
+    )
 
 
-# ---------------------------------------------------------------------------
-# DB flush loop — drains _reading_buffer to SQLite every batch_interval_s
-# ---------------------------------------------------------------------------
 
 async def _db_flush_loop(interval: float) -> None:
     logger.info("DB flush loop started  (interval=%.0f s)", interval)
@@ -111,7 +126,7 @@ async def _db_flush_loop(interval: float) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Lifespan — startup / shutdown hooks
+# Lifespan â€” startup / shutdown hooks
 # ---------------------------------------------------------------------------
 
 @asynccontextmanager
@@ -120,9 +135,9 @@ async def lifespan(app: FastAPI):
     _start_time = time.monotonic()
 
     logger.info("=" * 64)
-    logger.info("  %s v%s  —  starting up", settings.app_name, settings.version)
+    logger.info("  %s v%s  â€”  starting up", settings.app_name, settings.version)
     logger.info("  Device   : %s", settings.device_id)
-    logger.info("  Mode     : %s", "SIMULATED" if settings.server.simulated else "HARDWARE")
+    logger.info("  Data     : ULTRON bridge")
     logger.info("  Host     : %s:%d", settings.server.host, settings.server.port)
     logger.info("  Interval : %.0f ms", settings.server.broadcast_interval * 1000)
     logger.info(
@@ -137,21 +152,27 @@ async def lifespan(app: FastAPI):
         settings.modbus.rtu_baudrate,
     )
     logger.info(
-        "  mDNS       : %s  (%s.local → port %d)",
+        "  mDNS       : %s  (%s.local â†’ port %d)",
         "ENABLED" if settings.discovery.mdns_enabled else "DISABLED",
         settings.discovery.hostname,
         settings.server.port,
     )
     logger.info("=" * 64)
 
-    # Initialise SQLite (non-fatal — monitoring still works without it)
+    # Initialise SQLite (non-fatal â€” monitoring still works without it)
     if settings.db.enabled:
         try:
             await asyncio.to_thread(db.init_db, settings.db.path, settings.db.retention_days)
+            # Initialize asset hierarchy in the same DB
+            import sqlite3
+            asset_conn = sqlite3.connect(settings.db.path, check_same_thread=False)
+            init_asset_db(asset_conn)
+            device_conn = sqlite3.connect(settings.db.path, check_same_thread=False)
+            init_device_db(device_conn)
         except Exception as exc:
-            logger.error("DB init failed — persistence disabled: %s", exc)
+            logger.error("DB init failed â€” persistence disabled: %s", exc)
 
-    # Initialise sensor hardware / simulator
+    # Initialise optional direct hardware sensors. Bridge data remains primary.
     await sensor_manager.initialise()
 
     # Start Modbus servers (errors are non-fatal)
@@ -161,11 +182,11 @@ async def lifespan(app: FastAPI):
     if settings.discovery.mdns_enabled:
         await mdns_advertiser.start_async()
 
-    # Start the combined sensor → WS → Modbus loop
-    sensor_task = asyncio.create_task(
-        _sensor_loop(interval=settings.server.broadcast_interval),
-        name="ultron-sensor-loop",
-    )
+    # Start bridge manager (polls registered bridge endpoints)
+    bridge_manager.set_data_callback(_on_bridge_data)
+    await bridge_manager.start()
+    # Sync bridges from asset hierarchy DB (equipment_type nodes with bridge_url)
+    await bridge_manager.sync_from_asset_db()
 
     # Start the DB flush task (only if DB is enabled)
     db_task = None
@@ -175,15 +196,9 @@ async def lifespan(app: FastAPI):
             name="ultron-db-flush",
         )
 
-    yield  # ← server is accepting requests
+    yield  # â† server is accepting requests
 
-    # ── Shutdown ──────────────────────────────────────────────────────────────
-    sensor_task.cancel()
-    try:
-        await sensor_task
-    except asyncio.CancelledError:
-        pass
-
+    # â”€â”€ Shutdown â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if db_task is not None:
         db_task.cancel()
         try:
@@ -195,6 +210,7 @@ async def lifespan(app: FastAPI):
             await asyncio.to_thread(db.flush_readings, _reading_buffer.copy())
         db.close_db()
 
+    await bridge_manager.stop()
     await modbus_service.stop()
     if settings.discovery.mdns_enabled:
         await mdns_advertiser.stop_async()
@@ -228,18 +244,29 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
+app.include_router(asset_router)
+app.include_router(device_router)
+
+
+def _client_ip(request: Request) -> Optional[str]:
+    """Best-effort source IP, honouring proxy headers (Render/NGINX set XFF)."""
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else None
+
 
 # ---------------------------------------------------------------------------
-# REST endpoints — System
+# REST endpoints â€” System
 # ---------------------------------------------------------------------------
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health() -> HealthResponse:
-    """Liveness probe — returns 200 as long as the server is running."""
+    """Liveness probe â€” returns 200 as long as the server is running."""
     return HealthResponse(
         status="ok",
         uptime_seconds=round(time.monotonic() - _start_time, 2),
@@ -250,7 +277,7 @@ async def health() -> HealthResponse:
 
 @app.get("/device", response_model=DeviceInfo, tags=["System"])
 async def device_info() -> DeviceInfo:
-    """Static device metadata — useful for dashboard identification panels."""
+    """Static device metadata â€” useful for dashboard identification panels."""
     return DeviceInfo(
         device_id=settings.device_id,
         app_name=settings.app_name,
@@ -263,7 +290,7 @@ async def device_info() -> DeviceInfo:
 
 
 # ---------------------------------------------------------------------------
-# REST endpoint — Device identity (used by auto-discovery)
+# REST endpoint â€” Device identity (used by auto-discovery)
 # ---------------------------------------------------------------------------
 
 @app.get(
@@ -278,7 +305,7 @@ async def device_identity() -> DeviceIdentityResponse:
     (dashboard, Python discovery agent, SCADA tools) to confirm this is an
     ULTRON Edge device and to learn which protocols are available.
 
-    This endpoint is intentionally unauthenticated — it is the "handshake" that
+    This endpoint is intentionally unauthenticated â€” it is the "handshake" that
     allows clients to discover and identify the device before establishing a
     full connection.
     """
@@ -302,35 +329,7 @@ async def device_identity() -> DeviceIdentityResponse:
 
 
 # ---------------------------------------------------------------------------
-# REST endpoints — Control
-# ---------------------------------------------------------------------------
-
-@app.post(
-    "/api/control/mode",
-    response_model=ModeChangeResponse,
-    tags=["Control"],
-    summary="Switch between simulated and hardware sensor mode",
-)
-async def set_sensor_mode(request: ModeChangeRequest) -> ModeChangeResponse:
-    """
-    Hot-swap the sensor implementation at runtime without restarting.
-
-    - `simulated: true`  → Use built-in pressure/temperature simulator (always works).
-    - `simulated: false` → Use real hardware sensors (requires Pi GPIO/I2C drivers).
-
-    If switching to hardware fails (e.g. running on a non-Pi machine or sensors
-    not wired), the server stays in simulation mode and returns `success: false`.
-    """
-    success, message = await sensor_manager.set_mode(request.simulated)
-    return ModeChangeResponse(
-        success=success,
-        mode=sensor_manager.mode,
-        message=message,
-    )
-
-
-# ---------------------------------------------------------------------------
-# REST endpoints — Sensors
+# REST endpoints â€” Sensors
 # ---------------------------------------------------------------------------
 
 @app.get("/sensors/latest", response_model=SensorSnapshot, tags=["Sensors"])
@@ -341,7 +340,7 @@ async def latest_sensor_values() -> SensorSnapshot:
     """
     reading = sensor_manager.latest
     if reading is None:
-        return SensorSnapshot(message="No reading available yet — server may still be initialising")
+        return SensorSnapshot(message="No reading available yet â€” server may still be initialising")
     return SensorSnapshot(reading=reading, message="ok")
 
 
@@ -406,7 +405,7 @@ async def sensor_history(
 
 
 # ---------------------------------------------------------------------------
-# REST endpoints — Modbus
+# REST endpoints â€” Modbus
 # ---------------------------------------------------------------------------
 
 @app.get(
@@ -438,6 +437,128 @@ async def modbus_register_map() -> ORJSONResponse:
     - Reserved Holding Register (4xxxx) plan for future configuration writes
     """
     return ORJSONResponse(content=build_register_documentation())
+
+
+# ---------------------------------------------------------------------------
+# REST endpoints â€” Bridge Management
+# ---------------------------------------------------------------------------
+
+@app.post(
+    "/api/bridges/register",
+    response_model=BridgeRegisterResponse,
+    tags=["Bridges"],
+    summary="Register a bridge endpoint for live data polling",
+)
+async def register_bridge(request: BridgeRegisterRequest) -> BridgeRegisterResponse:
+    """
+    Register a bridge IP:port so the backend starts polling it for real sensor data.
+
+    Example:
+        POST /api/bridges/register
+        {"url": "http://192.168.1.100:8765"}
+
+    The backend will poll {url}/api/live every 1 second and broadcast the data
+    via WebSocket to all connected dashboard clients.
+    """
+    url = request.url.strip().rstrip("/")
+    if not url.startswith("http"):
+        url = "http://" + url
+
+    bridge = await bridge_manager.register(url, request.equipment_type_id)
+    logger.info("Bridge registered via API: %s (id=%s, equip=%s)", url, bridge.id, request.equipment_type_id)
+    return BridgeRegisterResponse(
+        success=True,
+        bridge_id=bridge.id,
+        url=bridge.url,
+        message=f"Bridge registered. Polling {bridge.url}/api/live every 1s.",
+    )
+
+
+@app.post(
+    "/api/bridges/ingest",
+    response_model=BridgeIngestResponse,
+    tags=["Bridges"],
+    summary="Receive live data pushed by a bridge (push model)",
+)
+async def ingest_bridge_data(
+    payload: BridgeIngestRequest, request: Request
+) -> BridgeIngestResponse:
+    """
+    Accept a sensor reading PUSHED by a bridge instead of polling the bridge.
+
+    Use this when the bridge runs on a private LAN but the backend is hosted in
+    the cloud (e.g. Render): the bridge can reach the backend over the internet,
+    but the backend cannot reach back into the bridge's network. Run the bridge
+    with `--push-url <backend>` and it will POST readings here every second.
+
+    Example:
+        POST /api/bridges/ingest
+        {"source": "BRIDGE-001", "pressure": 7.2, "temperature": 81.5}
+
+    The reading is normalized and broadcast over WebSocket to all dashboards,
+    exactly like polled bridge data.
+    """
+    raw = payload.model_dump()
+    machine_id = str(
+        payload.machine_id or raw.get("machineId") or payload.source or "default"
+    )
+    reported_ip = str(payload.ip or raw.get("ip") or "")
+    source_ip = _client_ip(request)
+
+    # Strict routing: a binding must match BOTH machine_id AND the reported ip.
+    binding = device_registry.match(machine_id, reported_ip)
+    device_node_id = binding["node_id"] if binding else None
+
+    # Distinct (machine_id, ip) pairs map to distinct bridge entries.
+    source_key = f"{machine_id}@{reported_ip}" if reported_ip else machine_id
+    bridge = await bridge_manager.ingest(
+        source_key, raw, machine_id=machine_id, device_node_id=device_node_id
+    )
+
+    data = bridge.latest_data or {}
+    device_registry.record_incoming(
+        machine_id,
+        reported_ip,
+        source_ip,
+        device_node_id,
+        pressure=data.get("pressure"),
+        temperature=data.get("temperature"),
+    )
+
+    return BridgeIngestResponse(
+        success=True,
+        bridge_id=bridge.id,
+        message="matched" if device_node_id else "accepted (no device binding matched)",
+    )
+
+
+@app.get(
+    "/api/bridges",
+    response_model=BridgeListResponse,
+    tags=["Bridges"],
+    summary="List all registered bridge endpoints",
+)
+async def list_bridges() -> BridgeListResponse:
+    """Returns all registered bridges with their current connection status."""
+    bridges = await bridge_manager.list_bridges()
+    return BridgeListResponse(count=len(bridges), bridges=bridges)
+
+
+@app.delete(
+    "/api/bridges/{bridge_id}",
+    tags=["Bridges"],
+    summary="Unregister a bridge endpoint",
+)
+async def unregister_bridge(bridge_id: str) -> ORJSONResponse:
+    """Remove a registered bridge by its ID. Polling stops immediately."""
+    removed = await bridge_manager.unregister(bridge_id)
+    if removed:
+        logger.info("Bridge unregistered via API: %s", bridge_id)
+        return ORJSONResponse(content={"success": True, "message": "Bridge removed"})
+    return ORJSONResponse(
+        content={"success": False, "message": "Bridge not found"},
+        status_code=404,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +598,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 except Exception:
                     pass
             except asyncio.TimeoutError:
-                pass  # no message — normal; just loop
+                pass  # no message â€” normal; just loop
     except WebSocketDisconnect:
         pass
     except Exception as exc:

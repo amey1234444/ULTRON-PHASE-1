@@ -28,7 +28,6 @@ export interface UseDeviceDiscoveryReturn {
   progress:        string;
   devices:         TauriDeviceInfo[];
   connectTo:       (device: TauriDeviceInfo) => void;
-  enterSimulation: () => void;
   retry:           () => void;
 }
 
@@ -42,7 +41,6 @@ export function useDeviceDiscovery(): UseDeviceDiscoveryReturn {
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
   const setConfig  = useConnectionStore((s) => s.setConfig);
-  const enterSim   = useConnectionStore((s) => s.enterSimulation);
   const setAppPhase = useAppStore((s) => s.setAppPhase);
 
   const unlistenRef = useRef<(() => void) | null>(null);
@@ -120,14 +118,6 @@ export function useDeviceDiscovery(): UseDeviceDiscoveryReturn {
     setProgress(`Found ${found.length} ULTRON devices — select one to connect.`);
   }, [platform, settings, connectTo]);
 
-  // ── Enter simulation mode ──────────────────────────────────────────────────
-
-  const enterSimulation = useCallback(() => {
-    platform.startSimulation().catch(() => { /* non-fatal */ });
-    enterSim();
-    setAppPhase('simulation');
-  }, [platform, enterSim, setAppPhase]);
-
   // ── Retry ─────────────────────────────────────────────────────────────────
 
   const retry = useCallback(() => {
@@ -152,5 +142,5 @@ export function useDeviceDiscovery(): UseDeviceDiscoveryReturn {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { state, progress, devices, connectTo, enterSimulation, retry };
+  return { state, progress, devices, connectTo, retry };
 }

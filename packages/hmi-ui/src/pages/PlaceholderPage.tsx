@@ -55,12 +55,12 @@ export const PlaceholderPage: React.FC<Props> = ({ view }) => {
   if (!content) return null;
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '2rem' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: '1rem' }}>
       <div className="scada-panel animate-fade-in" style={{ maxWidth: 520, width: '100%', padding: 0, overflow: 'hidden' }}>
         {/* Gradient accent */}
         <div style={{ height: 2, background: 'linear-gradient(90deg, var(--accent), var(--info), transparent)' }} />
 
-        <div style={{ padding: '1.75rem 2rem' }}>
+        <div className="p-4 sm:p-7">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: '1.25rem' }}>
             <span style={{
               fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase',

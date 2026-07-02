@@ -7,8 +7,6 @@
 export type DataProtocol =
   | 'websocket'          // WebSocket to Pi (primary)
   | 'modbus'             // Modbus TCP to Pi (fallback)
-  | 'simulation-backend' // Local backend running sim mode
-  | 'simulation-client'  // Client-side generated values (last resort)
   | 'none';
 
 /** High-level connection lifecycle state. */
@@ -18,7 +16,6 @@ export type ConnectionPhase =
   | 'websocket-active'
   | 'connecting-modbus'
   | 'modbus-active'
-  | 'simulation-active'
   | 'disconnected'
   | 'error';
 
@@ -38,7 +35,7 @@ export const FALLBACK_CONFIG = {
   // 3 consecutive WS errors (~9 s) before trying Modbus.
   // Reduced from 5 for faster failover without being trigger-happy on brief glitches.
   wsFailuresBeforeModbus:   3,
-  modbusFailuresBeforeSim:  5,    // consecutive Modbus errors → client sim
+  modbusFailuresBeforeDisconnect: 5,
   wsReconnectMs:            3_000,
   modbusPollingMs:          250,
   simIntervalMs:            100,
