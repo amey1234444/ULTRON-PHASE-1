@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - test-phase-1
     paths:
       - 'packages/hmi-ui/**'
       - 'ultron-dashboard/**'
