@@ -34,8 +34,6 @@ As a script:
 """
 
 import argparse
-import math
-import random
 import sys
 import time
 from datetime import datetime, timezone
@@ -53,18 +51,22 @@ INTERVAL    = 0.5           # seconds between pushes
 # ════════════════════════════════════════════════════════════════════════════
 
 
+class SensorSourceNotConfigured(RuntimeError):
+    """Raised until this bridge is connected to a real measurement source."""
+
+
 def read_sensor() -> dict:
     """
-    Return one reading as {"pressure": <bar>, "temperature": <degC>}.
+    Return one real reading as {"pressure": <bar>, "temperature": <degC>}.
 
-    >>> REPLACE THIS with your real measurement source. <<<
-    The default below generates realistic-looking demo values so you can verify
-    the end-to-end flow immediately.
+    Wire this function to your real measurement source before running the bridge.
+    It intentionally does not generate demo/simulated values, because every push
+    is treated as live plant data by the backend once the binding matches.
     """
-    t = time.time()
-    pressure    = round(7.0 + 1.2 * math.sin(t / 6.0) + random.uniform(-0.15, 0.15), 2)
-    temperature = round(82.0 + 6.0 * math.sin(t / 11.0) + random.uniform(-0.4, 0.4), 2)
-    return {"pressure": pressure, "temperature": temperature}
+    raise SensorSourceNotConfigured(
+        "read_sensor() is not connected to real hardware/data. "
+        "Edit ultron_colab_bridge.py and return real pressure/temperature values."
+    )
 
 
 def push_forever(backend: str, machine_id: str, ip: str, port: int, interval: float) -> None:
@@ -98,6 +100,9 @@ def push_forever(backend: str, machine_id: str, ip: str, port: int, interval: fl
             fails = 0
         except KeyboardInterrupt:
             print("\n[ULTRON] Stopped.")
+            return
+        except SensorSourceNotConfigured as exc:
+            print(f"  ! bridge not started: {exc}")
             return
         except Exception as exc:
             fails += 1

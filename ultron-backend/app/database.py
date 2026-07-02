@@ -25,6 +25,8 @@ def init_db(path: str, retention_days: int) -> None:
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp   TEXT    NOT NULL,
             machine_id  TEXT    NOT NULL,
+            bridge_ip   TEXT    NOT NULL DEFAULT '',
+            equipment_type_id TEXT NOT NULL DEFAULT '',
             pressure    REAL    NOT NULL,
             temperature REAL,
             status      TEXT    NOT NULL,
@@ -46,6 +48,16 @@ def init_db(path: str, retention_days: int) -> None:
     try:
         _conn.execute("ALTER TABLE readings ADD COLUMN source TEXT NOT NULL DEFAULT ''")
         logger.info("Migration: added source column to readings")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        _conn.execute("ALTER TABLE readings ADD COLUMN bridge_ip TEXT NOT NULL DEFAULT ''")
+        logger.info("Migration: added bridge_ip column to readings")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        _conn.execute("ALTER TABLE readings ADD COLUMN equipment_type_id TEXT NOT NULL DEFAULT ''")
+        logger.info("Migration: added equipment_type_id column to readings")
     except sqlite3.OperationalError:
         pass
     _conn.commit()
@@ -70,8 +82,8 @@ def flush_readings(batch: list) -> int:
     if not batch or _conn is None:
         return 0
     _conn.executemany(
-        "INSERT INTO readings (timestamp, machine_id, pressure, temperature, status, source) "
-        "VALUES (:timestamp, :machine_id, :pressure, :temperature, :status, :source)",
+        "INSERT INTO readings (timestamp, machine_id, bridge_ip, equipment_type_id, pressure, temperature, status, source) "
+        "VALUES (:timestamp, :machine_id, :bridge_ip, :equipment_type_id, :pressure, :temperature, :status, :source)",
         batch,
     )
     _conn.commit()
@@ -82,6 +94,9 @@ def query_history(
     from_ts: Optional[str],
     to_ts: Optional[str],
     limit: int,
+    machine_id: Optional[str] = None,
+    bridge_ip: Optional[str] = None,
+    equipment_type_id: Optional[str] = None,
 ) -> list:
     """Return readings newest-first. Runs inside asyncio.to_thread."""
     if _conn is None:
@@ -94,10 +109,19 @@ def query_history(
     if to_ts:
         clauses.append("timestamp <= ?")
         params.append(to_ts)
+    if machine_id:
+        clauses.append("machine_id = ?")
+        params.append(machine_id)
+    if bridge_ip is not None:
+        clauses.append("bridge_ip = ?")
+        params.append(bridge_ip)
+    if equipment_type_id:
+        clauses.append("equipment_type_id = ?")
+        params.append(equipment_type_id)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     params.append(min(limit, 10_000))
     rows = _conn.execute(
-        f"SELECT timestamp, machine_id, pressure, temperature, status, source "
+        f"SELECT timestamp, machine_id, bridge_ip, equipment_type_id, pressure, temperature, status, source "
         f"FROM readings {where} ORDER BY timestamp DESC LIMIT ?",
         params,
     ).fetchall()
@@ -105,10 +129,12 @@ def query_history(
         {
             "timestamp": r[0],
             "machine_id": r[1],
-            "pressure": r[2],
-            "temperature": r[3],
-            "status": r[4],
-            "source": r[5],
+            "bridge_ip": r[2],
+            "equipment_type_id": r[3],
+            "pressure": r[4],
+            "temperature": r[5],
+            "status": r[6],
+            "source": r[7],
         }
         for r in rows
     ]

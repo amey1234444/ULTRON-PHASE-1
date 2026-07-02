@@ -12,6 +12,12 @@ import { useToastStore } from './toastStore';
 
 type AlarmKey = keyof AlarmState;
 
+export interface ActiveBridgeBinding {
+  machineId: string;
+  ip:        string;
+  nodeId:    string;
+}
+
 const ALARM_META: Record<AlarmKey, { label: string; tag: string; severity: 'warning' | 'critical'; isPressure: boolean }> = {
   llPressure:    { label: 'Pressure Low-Low',     tag: 'PRS-LL', severity: 'critical', isPressure: true  },
   lPressure:     { label: 'Pressure Low',          tag: 'PRS-L',  severity: 'warning',  isPressure: true  },
@@ -37,13 +43,15 @@ interface SensorStore {
   activeDataProtocol: DataProtocol;
   /** Per-device reading history, keyed by machine_id (bridge routing). */
   byDevice:           Record<string, SensorReading[]>;
-  /** When set, only readings with this machine_id drive the active view. */
-  activeMachineId:    string | null;
+  /** Selected bridge binding; selected equipment must match machine_id + ip + node id. */
+  activeBinding:      ActiveBridgeBinding | null;
+  /** True when the current asset view requires a saved bridge binding before data can display. */
+  requiresBinding:    boolean;
 
   addReading:           (r: SensorReading, latencyMs?: number, protocol?: DataProtocol) => void;
   setConnectionStatus:  (s: ConnectionStatus)  => void;
   setActiveProtocol:    (p: DataProtocol)       => void;
-  setActiveDevice:      (machineId: string | null) => void;
+  setActiveDevice:      (binding: ActiveBridgeBinding | null, requiresBinding?: boolean) => void;
   incrementReconnect:   ()                      => void;
   reset:                ()                      => void;
 }
@@ -87,7 +95,8 @@ export const useSensorStore = create<SensorStore>((set) => ({
   latencyMs:          0,
   activeDataProtocol: 'none',
   byDevice:           {},
-  activeMachineId:    null,
+  activeBinding:      null,
+  requiresBinding:    false,
 
   addReading: (reading, latencyMs, protocol) =>
     set((state) => {
@@ -107,10 +116,21 @@ export const useSensorStore = create<SensorStore>((set) => ({
         byDevice = { ...state.byDevice, [mid]: bucket };
       }
 
-      // When a device is selected, only its readings drive the active view.
-      // When none is selected, fall back to the legacy global behavior so the
-      // simulator / single-device setups keep working unchanged.
-      if (state.activeMachineId !== null && mid !== state.activeMachineId) {
+      if (state.requiresBinding) {
+        const binding = state.activeBinding;
+        const nodeId = reading.device_id ?? reading.equipment_type_id;
+        const reportedIp = reading.bridge_ip ?? '';
+        const matchesBinding = !!binding
+          && mid === binding.machineId
+          && reportedIp === binding.ip
+          && nodeId === binding.nodeId;
+
+        if (!matchesBinding) {
+          return { byDevice };
+        }
+      }
+
+      if (!state.requiresBinding && state.activeBinding !== null && mid !== state.activeBinding.machineId) {
         return { byDevice };
       }
 
@@ -169,16 +189,39 @@ export const useSensorStore = create<SensorStore>((set) => ({
 
   setActiveProtocol: (activeDataProtocol) => set({ activeDataProtocol }),
 
-  setActiveDevice: (machineId) =>
+  setActiveDevice: (binding, requiresBinding = false) =>
     set((state) => {
-      if (machineId === state.activeMachineId) return {};
+      const sameBinding =
+        binding?.machineId === state.activeBinding?.machineId &&
+        binding?.ip === state.activeBinding?.ip &&
+        binding?.nodeId === state.activeBinding?.nodeId &&
+        requiresBinding === state.requiresBinding;
+      if (sameBinding) return {};
+
+      if (requiresBinding && !binding) {
+        return {
+          activeBinding: null,
+          requiresBinding,
+          readings: [],
+          latest: null,
+          alarms: { ...defaultAlarms },
+          healthScore: 100,
+        };
+      }
+
       // Rehydrate the active view from the selected device's bucket.
-      const bucket = machineId ? (state.byDevice[machineId] ?? []) : state.readings;
+      const bucket = binding
+        ? (state.byDevice[binding.machineId] ?? []).filter((reading) => {
+            const nodeId = reading.device_id ?? reading.equipment_type_id;
+            return (reading.bridge_ip ?? '') === binding.ip && nodeId === binding.nodeId;
+          })
+        : state.readings;
       const latest = bucket.length ? bucket[bucket.length - 1] : null;
       return {
-        activeMachineId: machineId,
-        readings: machineId ? bucket : state.readings,
-        latest: machineId ? latest : state.latest,
+        activeBinding: binding,
+        requiresBinding,
+        readings: binding ? bucket : state.readings,
+        latest: binding || requiresBinding ? latest : state.latest,
         alarms: latest ? computeAlarms(latest) : { ...defaultAlarms },
         healthScore: latest ? computeHealthScore(latest.pressure, latest.temperature) : 100,
       };
@@ -193,6 +236,6 @@ export const useSensorStore = create<SensorStore>((set) => ({
       connectionStatus: 'disconnected', connectedAt: null,
       reconnectCount: 0, alarms: { ...defaultAlarms },
       latencyMs: 0, activeDataProtocol: 'none',
-      byDevice: {}, activeMachineId: null,
+      byDevice: {}, activeBinding: null, requiresBinding: false,
     }),
 }));

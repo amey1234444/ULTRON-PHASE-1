@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import orjson
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -85,6 +85,7 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
         temperature=temperature,
         status=status,
         machine_id=machine_id,
+        bridge_ip=bridge_info.reported_ip,
         device_id=device_id,
         source="bridge",
     )
@@ -97,6 +98,7 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
         _reading_buffer.append({
             "timestamp":   reading.timestamp.isoformat(),
             "machine_id":  machine_id or settings.machine_id,
+            "bridge_ip":   bridge_info.reported_ip or "",
             "pressure":    reading.pressure,
             "temperature": reading.temperature,
             "status":      reading.status.value,
@@ -365,7 +367,11 @@ async def export_sensors_csv(
     rows_chrono = list(reversed(rows))  # oldest-first
 
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=['timestamp', 'machine_id', 'pressure', 'temperature', 'status'])
+    writer = csv.DictWriter(
+        buf,
+        fieldnames=['timestamp', 'machine_id', 'bridge_ip', 'equipment_type_id', 'pressure', 'temperature', 'status'],
+        extrasaction='ignore',
+    )
     writer.writeheader()
     writer.writerows(rows_chrono)
 
@@ -387,6 +393,9 @@ async def sensor_history(
     from_ts: Optional[str] = None,
     to_ts:   Optional[str] = None,
     limit:   int           = 1000,
+    machine_id: Optional[str] = None,
+    bridge_ip: Optional[str] = None,
+    equipment_type_id: Optional[str] = None,
 ) -> SensorHistoryResponse:
     """
     Returns persisted sensor readings from the local SQLite database.
@@ -399,7 +408,15 @@ async def sensor_history(
     """
     if not settings.db.enabled:
         return SensorHistoryResponse(count=0, total_stored=0, readings=[])
-    rows = await asyncio.to_thread(db.query_history, from_ts, to_ts, limit)
+    rows = await asyncio.to_thread(
+        db.query_history,
+        from_ts,
+        to_ts,
+        limit,
+        machine_id,
+        bridge_ip,
+        equipment_type_id,
+    )
     total = await asyncio.to_thread(db.count_readings)
     return SensorHistoryResponse(count=len(rows), total_stored=total, readings=rows)
 
@@ -501,18 +518,42 @@ async def ingest_bridge_data(
     raw = payload.model_dump()
     machine_id = str(
         payload.machine_id or raw.get("machineId") or payload.source or "default"
-    )
+    ).strip()
     reported_ip = str(payload.ip or raw.get("ip") or "")
     source_ip = _client_ip(request)
+
+    if not machine_id or machine_id == "default":
+        raise HTTPException(400, "machine_id is required for bridge ingest")
+    if not reported_ip:
+        raise HTTPException(400, "ip is required for bridge ingest")
 
     # Strict routing: a binding must match BOTH machine_id AND the reported ip.
     binding = device_registry.match(machine_id, reported_ip)
     device_node_id = binding["node_id"] if binding else None
 
+    if not device_node_id:
+        device_registry.record_incoming(
+            machine_id,
+            reported_ip,
+            source_ip,
+            None,
+            pressure=payload.pressure,
+            temperature=payload.temperature,
+        )
+        return BridgeIngestResponse(
+            success=True,
+            bridge_id="",
+            message="accepted (no device binding matched; not broadcast)",
+        )
+
     # Distinct (machine_id, ip) pairs map to distinct bridge entries.
     source_key = f"{machine_id}@{reported_ip}" if reported_ip else machine_id
     bridge = await bridge_manager.ingest(
-        source_key, raw, machine_id=machine_id, device_node_id=device_node_id
+        source_key,
+        raw,
+        machine_id=machine_id,
+        reported_ip=reported_ip,
+        device_node_id=device_node_id,
     )
 
     data = bridge.latest_data or {}

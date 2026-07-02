@@ -59,8 +59,13 @@ export const MainLayout: React.FC = () => {
   }, [apiBase, fetchBindings]);
 
   useEffect(() => {
-    const boundMachineId = selectedEquipmentTypeId ? bindings[selectedEquipmentTypeId]?.machine_id ?? null : null;
-    setActiveDevice(boundMachineId);
+    const binding = selectedEquipmentTypeId ? bindings[selectedEquipmentTypeId] : null;
+    setActiveDevice(
+      binding
+        ? { machineId: binding.machine_id, ip: binding.ip, nodeId: binding.node_id }
+        : null,
+      !!selectedEquipmentTypeId,
+    );
   }, [selectedEquipmentTypeId, bindings, setActiveDevice]);
 
   const handleNavigate = useCallback((view: SidebarView) => {

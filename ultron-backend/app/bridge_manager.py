@@ -36,6 +36,7 @@ class BridgeInfo:
         self.error_count: int = 0
         self.latest_data: Optional[dict] = None
         self.machine_id: Optional[str] = None
+        self.reported_ip: Optional[str] = None
         self.device_node_id: Optional[str] = None
 
     @property
@@ -56,6 +57,7 @@ class BridgeInfo:
             "errorCount": self.error_count,
             "hasData": self.latest_data is not None,
             "machineId": self.machine_id,
+            "reportedIp": self.reported_ip,
             "deviceNodeId": self.device_node_id,
         }
 
@@ -198,6 +200,7 @@ class BridgeManager:
         source_key: str,
         raw: dict,
         machine_id: str = "",
+        reported_ip: str = "",
         device_node_id: Optional[str] = None,
     ) -> BridgeInfo:
         """Accept a pushed reading (push model). Creates/reuses a BridgeInfo for the source."""
@@ -221,6 +224,7 @@ class BridgeManager:
         bridge.poll_count += 1
         bridge.last_error = None
         bridge.machine_id = machine_id
+        bridge.reported_ip = reported_ip
         bridge.device_node_id = device_node_id
         if device_node_id:
             bridge.equipment_type_id = device_node_id

@@ -25,6 +25,7 @@ class SensorReading(BaseModel):
     temperature: float = Field(..., description="Temperature in °C")
     status: SystemStatus = Field(default=SystemStatus.HEALTHY)
     machine_id: Optional[str] = Field(default=None, description="Machine ID the reading belongs to (bridge routing)")
+    bridge_ip: Optional[str] = Field(default=None, description="Reported bridge IP label used for routing")
     device_id: Optional[str] = Field(default=None, description="Matched asset node id (bridge routing)")
     source: Optional[str] = Field(default=None, description="'bridge' for ULTRON bridge readings")
 
@@ -93,6 +94,8 @@ class ModbusStatusResponse(BaseModel):
 class SensorHistoryItem(BaseModel):
     timestamp: str
     machine_id: str
+    bridge_ip: Optional[str] = None
+    equipment_type_id: Optional[str] = None
     pressure: float
     temperature: Optional[float]
     status: str

@@ -88,6 +88,8 @@ function StatCard({ label, value, unit, color, sub }: StatProps) {
 export const HistoricalTrendsPage: React.FC = () => {
   const apiBase       = useConnectionStore((s) => s.config?.apiBase ?? 'http://localhost:8000');
   const storeReadings = useSensorStore((s) => s.readings);
+  const activeBinding = useSensorStore((s) => s.activeBinding);
+  const requiresBinding = useSensorStore((s) => s.requiresBinding);
   const push          = useToastStore((s) => s.push);
 
   const [preset,     setPreset]     = useState<PresetMinutes>(60);
@@ -120,6 +122,11 @@ export const HistoricalTrendsPage: React.FC = () => {
         const to   = new Date().toISOString();
         const from = new Date(Date.now() - minutes * 60_000).toISOString();
         const params = new URLSearchParams({ from_ts: from, to_ts: to, limit: '10000' });
+        if (activeBinding) {
+          params.set('machine_id', activeBinding.machineId);
+          params.set('bridge_ip', activeBinding.ip);
+          params.set('equipment_type_id', activeBinding.nodeId);
+        }
         const res = await fetch(`${apiBase}/api/sensors/history?${params}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data: {
@@ -136,13 +143,19 @@ export const HistoricalTrendsPage: React.FC = () => {
         setLoading(false);
       }
     },
-    [apiBase],
+    [activeBinding, apiBase],
   );
 
   useEffect(() => {
+    if (requiresBinding && !activeBinding) {
+      setDbReadings([]);
+      setDbCount(0);
+      setTotalStored(null);
+      return;
+    }
     loadHistory(preset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeBinding, requiresBinding]);
 
   // ── Export CSV ──────────────────────────────────────────────────────────────
 
