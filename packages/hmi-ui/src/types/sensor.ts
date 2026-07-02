@@ -11,6 +11,8 @@ export interface SensorReading {
   machine_id?: string;
   /** Matched asset node id when the reading was routed via a device binding */
   device_id?:  string;
+  /** Equipment type node id carried by routed bridge websocket payloads */
+  equipment_type_id?: string;
   /** Backend data source; live HMI views only accept bridge readings */
   source?:     'bridge' | string;
   mode?:       string;

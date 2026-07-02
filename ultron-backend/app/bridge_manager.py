@@ -55,6 +55,8 @@ class BridgeInfo:
             "pollCount": self.poll_count,
             "errorCount": self.error_count,
             "hasData": self.latest_data is not None,
+            "machineId": self.machine_id,
+            "deviceNodeId": self.device_node_id,
         }
 
 

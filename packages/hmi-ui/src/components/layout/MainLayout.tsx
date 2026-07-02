@@ -37,7 +37,6 @@ function useIsMobile() {
 export const MainLayout: React.FC = () => {
   const appPhase = useAppStore((s) => s.appPhase);
   const selectedEquipmentTypeId = useAssetHierarchyStore((s) => s.selectedEquipmentTypeId);
-  const selectedMachineId = useAssetHierarchyStore((s) => s.selectedMachineId);
   const apiBase = useConnectionStore((s) => s.config?.apiBase) ?? DEFAULT_BACKEND_CONFIG.apiBase;
   const bindings = useDeviceBindingStore((s) => s.bindings);
   const fetchBindings = useDeviceBindingStore((s) => s.fetchBindings);
@@ -60,9 +59,9 @@ export const MainLayout: React.FC = () => {
   }, [apiBase, fetchBindings]);
 
   useEffect(() => {
-    const boundMachineId = selectedMachineId ? bindings[selectedMachineId]?.machine_id ?? null : null;
+    const boundMachineId = selectedEquipmentTypeId ? bindings[selectedEquipmentTypeId]?.machine_id ?? null : null;
     setActiveDevice(boundMachineId);
-  }, [selectedMachineId, bindings, setActiveDevice]);
+  }, [selectedEquipmentTypeId, bindings, setActiveDevice]);
 
   const handleNavigate = useCallback((view: SidebarView) => {
     setActiveView(view);
