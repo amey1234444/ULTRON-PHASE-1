@@ -76,7 +76,12 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
     """
     from app.models import SensorReading, SystemStatus
 
-    status = sensor_manager._derive_status(pressure, temperature)
+    connected = bool((bridge_info.latest_data or {}).get("connected", True))
+    status = (
+        SystemStatus.OFFLINE
+        if not connected
+        else sensor_manager._derive_status(pressure, temperature)
+    )
     machine_id = bridge_info.machine_id
     device_id = bridge_info.device_node_id
     reading = SensorReading(
@@ -90,6 +95,16 @@ async def _on_bridge_data(pressure: float, temperature: float, bridge_info) -> N
         source="bridge",
     )
     sensor_manager._latest = reading
+    if not connected and device_id:
+        device_registry.record_incoming(
+            machine_id or "",
+            bridge_info.reported_ip or "",
+            None,
+            device_id,
+            pressure=0.0,
+            temperature=0.0,
+            connected=False,
+        )
     await ws_manager.broadcast(reading, equipment_type_id=bridge_info.equipment_type_id)
     modbus_service.update_registers(
         reading, uptime_s=time.monotonic() - _start_time
@@ -564,6 +579,7 @@ async def ingest_bridge_data(
         device_node_id,
         pressure=data.get("pressure"),
         temperature=data.get("temperature"),
+        connected=bool(data.get("connected", True)),
     )
 
     return BridgeIngestResponse(

@@ -104,6 +104,8 @@ export const useSensorStore = create<SensorStore>((set) => ({
         return {};
       }
 
+      const isOffline = reading.connected === false || reading.status === 'offline';
+
       // Bucket every reading by its machine_id so each device keeps its own
       // history regardless of which device is currently being viewed.
       let byDevice = state.byDevice;
@@ -139,12 +141,16 @@ export const useSensorStore = create<SensorStore>((set) => ({
         : [...state.readings, reading];
 
       const t = reading.temperature;
-      const newAlarms: AlarmState = computeAlarms(reading);
+      const newAlarms: AlarmState = isOffline ? { ...defaultAlarms } : computeAlarms(reading);
 
-      // Detect alarm state transitions and emit events + toasts
+      // Detect alarm state transitions and emit events + toasts.
       const prevAlarms  = state.alarms;
       const alarmStore  = useAlarmStore.getState();
       const toastStore  = useToastStore.getState();
+
+      if (isOffline && state.connectionStatus !== 'disconnected') {
+        toastStore.push('Device disconnected', 'critical');
+      }
 
       (Object.keys(newAlarms) as AlarmKey[]).forEach((key) => {
         const fired    = newAlarms[key];
@@ -174,9 +180,11 @@ export const useSensorStore = create<SensorStore>((set) => ({
         readings:           next,
         latest:             reading,
         alarms:             newAlarms,
-        healthScore:        computeHealthScore(reading.pressure, t),
+        healthScore:        isOffline ? 0 : computeHealthScore(reading.pressure, t),
+        connectionStatus:   isOffline ? 'disconnected' : 'connected',
+        connectedAt:        isOffline ? null : (state.connectedAt ?? Date.now()),
         latencyMs:          latencyMs ?? state.latencyMs,
-        activeDataProtocol: protocol  ?? state.activeDataProtocol,
+        activeDataProtocol: isOffline ? 'none' : (protocol ?? state.activeDataProtocol),
         byDevice,
       };
     }),

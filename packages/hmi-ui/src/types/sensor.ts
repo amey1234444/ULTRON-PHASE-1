@@ -17,6 +17,8 @@ export interface SensorReading {
   equipment_type_id?: string;
   /** Backend data source; live HMI views only accept bridge readings */
   source?:     'bridge' | string;
+  /** False when the backend/bridge reports the device has disconnected */
+  connected?:  boolean;
   mode?:       string;
   sequence?:   number;
 }

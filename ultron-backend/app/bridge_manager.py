@@ -19,6 +19,7 @@ from app.logger import logger
 POLL_INTERVAL_S = 1.0
 BRIDGE_TIMEOUT_S = 5.0
 STALE_AFTER_S = 10.0
+PUSH_STALE_AFTER_S = 2.0
 
 
 class BridgeInfo:
@@ -38,6 +39,7 @@ class BridgeInfo:
         self.machine_id: Optional[str] = None
         self.reported_ip: Optional[str] = None
         self.device_node_id: Optional[str] = None
+        self.offline_reported: bool = False
 
     @property
     def is_push(self) -> bool:
@@ -218,11 +220,17 @@ class BridgeManager:
                 logger.info("Push bridge created: %s (id=%s)", source_key, bridge.id)
 
         normalized = _normalize_bridge_data(raw)
+        connected = bool(normalized.get("connected", True))
         bridge.latest_data = normalized
-        bridge.status = "connected"
-        bridge.last_seen = time.time()
+        bridge.status = "connected" if connected else "error"
+        if connected:
+            bridge.last_seen = time.time()
+            bridge.last_error = None
+            bridge.offline_reported = False
+        else:
+            bridge.last_error = "Disconnected"
+            bridge.offline_reported = True
         bridge.poll_count += 1
-        bridge.last_error = None
         bridge.machine_id = machine_id
         bridge.reported_ip = reported_ip
         bridge.device_node_id = device_node_id
@@ -301,7 +309,10 @@ class BridgeManager:
                     bridges = list(self._bridges.values())
 
                 if bridges:
-                    tasks = [self._poll_one(b) for b in bridges]
+                    tasks = [
+                        self._mark_push_stale_if_needed(b) if b.is_push else self._poll_one(b)
+                        for b in bridges
+                    ]
                     await asyncio.gather(*tasks, return_exceptions=True)
 
             except asyncio.CancelledError:
@@ -310,6 +321,28 @@ class BridgeManager:
                 logger.error("Bridge poll loop error: %s", exc, exc_info=True)
 
             await asyncio.sleep(POLL_INTERVAL_S)
+
+    async def _mark_push_stale_if_needed(self, bridge: BridgeInfo) -> None:
+        if bridge.last_seen <= 0 or bridge.offline_reported:
+            return
+        if (time.time() - bridge.last_seen) <= PUSH_STALE_AFTER_S:
+            return
+
+        bridge.status = "error"
+        bridge.last_error = "No push data received"
+        bridge.latest_data = {
+            "pressure": 0.0,
+            "temperature": 0.0,
+            "mode": "BRIDGE",
+            "fault": "DISCONNECTED",
+            "connected": False,
+            "raw": {},
+        }
+        bridge.offline_reported = True
+        logger.warning("Push bridge stale: %s", bridge.url)
+
+        if self._on_data_callback:
+            await self._on_data_callback(0.0, 0.0, bridge)
 
     async def _poll_one(self, bridge: BridgeInfo) -> None:
         poll_url = bridge.url + "/api/live"
@@ -324,6 +357,7 @@ class BridgeManager:
             bridge.last_seen = time.time()
             bridge.poll_count += 1
             bridge.last_error = None
+            bridge.offline_reported = False
 
             if self._on_data_callback:
                 await self._on_data_callback(

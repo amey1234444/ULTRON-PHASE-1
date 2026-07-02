@@ -100,7 +100,7 @@ def _binding_row_to_dict(row: tuple) -> dict:
     node_id, machine_id, ip, port, updated_at = row
     rt = _runtime.get(node_id, {})
     last_seen = rt.get("last_seen", 0.0)
-    connected = bool(last_seen) and (time.time() - last_seen) <= CONNECTED_WINDOW_S
+    connected = bool(rt.get("connected", True)) and bool(last_seen) and (time.time() - last_seen) <= CONNECTED_WINDOW_S
     return {
         "node_id": node_id,
         "machine_id": machine_id,
@@ -134,6 +134,7 @@ def record_incoming(
     matched_node_id: Optional[str],
     pressure: Optional[float] = None,
     temperature: Optional[float] = None,
+    connected: bool = True,
 ) -> None:
     """Record runtime status for an incoming reading (matched or not)."""
     now = time.time()
@@ -157,6 +158,7 @@ def record_incoming(
             "source_ip": source_ip,
             "pressure": pressure,
             "temperature": temperature,
+            "connected": connected,
         }
 
 

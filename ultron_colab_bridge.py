@@ -77,6 +77,26 @@ def push_forever(backend: str, machine_id: str, ip: str, port: int, interval: fl
 
     session = requests.Session()
     fails = 0
+
+    def notify_disconnected() -> None:
+        payload = {
+            "source": machine_id,
+            "machine_id": machine_id,
+            "ip": ip,
+            "port": port,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "pressure": 0.0,
+            "temperature": 0.0,
+            "connected": False,
+            "fault": "DISCONNECTED",
+            "mode": "STOPPED",
+        }
+        try:
+            session.post(ingest_url, json=payload, timeout=10).raise_for_status()
+            print("[ULTRON] Device disconnected notification sent.")
+        except Exception as exc:
+            print(f"[ULTRON] Could not notify backend about disconnect: {exc}")
+
     while True:
         try:
             reading = read_sensor()
@@ -86,6 +106,7 @@ def push_forever(backend: str, machine_id: str, ip: str, port: int, interval: fl
                 "ip": ip,
                 "port": port,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
+                "connected": True,
                 **reading,
             }
             resp = session.post(ingest_url, json=payload, timeout=30)
@@ -100,6 +121,7 @@ def push_forever(backend: str, machine_id: str, ip: str, port: int, interval: fl
             fails = 0
         except KeyboardInterrupt:
             print("\n[ULTRON] Stopped.")
+            notify_disconnected()
             return
         except SensorSourceNotConfigured as exc:
             print(f"  ! bridge not started: {exc}")
